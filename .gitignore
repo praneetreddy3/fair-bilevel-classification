@@ -14,12 +14,7 @@ env/
 *.swp
 *.swo
 
-# Generated outputs (regenerate with scripts)
-outputs/*.json
-outputs/*.csv
-outputs/*.txt
-outputs/*.png
-outputs/*.md
+# Generated outputs (keep key results, ignore intermediate files)
 outputs/archive/
 
 # Reference implementation (teammate's code)

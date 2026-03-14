@@ -1,0 +1,212 @@
+================================================================================
+VALIDATION SUMMARY — Draft Paper Pipeline End-to-End Check
+Date: 2026-03-13
+================================================================================
+
+INTENDED PIPELINE FLOW:
+  private client data -> original minibatch -> synthetic minibatch ->
+  Universum points -> inner training -> outer fairness evaluation ->
+  client payload -> server aggregation -> metrics
+
+================================================================================
+SECTION 1: WHAT WAS CHECKED
+================================================================================
+
+Files inspected:
+  - draft_model/notation.py         (data structures)
+  - draft_model/minibatch_design.py (stratified sampling, Ds, U construction)
+  - draft_model/losses.py           (L_base, L_universum, g_EO, Lin, L_out, Phi)
+  - draft_model/bilevel_al.py       (client_round_al, client_round_simplified)
+  - draft_model/server.py           (aggregate_payloads, train_global_ridge_erm, EO metrics)
+  - draft_model/run_draft.py        (main pipeline orchestration)
+  - check_2d_dataset.py             (standalone 2D sanity check)
+  - draft_model/check_draft_examples.py (Appendix 4.2.4 example verification)
+  - pipeline/load_2d.py             (2D data loader)
+  - pipeline/load_adult.py          (Adult data loader)
+
+Validation methods:
+  1. Static code analysis of all files above
+  2. Runtime validation script (validate_pipeline.py) with 27 automated checks
+  3. check_draft_examples.py: Appendix 4.2.4 stratum count verification
+  4. Full pipeline run: python -m draft_model.run_draft --data 2d --debug_invariants
+
+================================================================================
+SECTION 2: WHAT PASSED (27/27 automated checks + static analysis)
+================================================================================
+
+CONDITION 1: Original minibatch sampled before Universum
+  STATUS: PASS
+  FILE: draft_model/run_draft.py lines 142-153
+  DETAIL: B = draw_original_minibatch() is called first; then Ds from B; then U
+          from Ds and B parameters. Ordering is correct.
+
+CONDITION 2: Minibatch sampling is stratified by (A, Y)
+  STATUS: PASS
+  FILE: draft_model/minibatch_design.py, draw_original_minibatch() lines 25-92
+  DETAIL: Quotas computed proportionally to stratum fractions (pi_a0y0, pi_a0y1,
+          pi_a1y0, pi_a1y1). Floor cmin enforced on positive groups. Sampling
+          is without replacement per stratum. Verified on 3 test clients:
+            Extreme (600 pts): |B|=128, q=(61,3,58,6) — matches actual counts
+            Moderate (900 pts): |B|=60, q=(25,5,24,6) — matches actual counts
+            Balanced (640 pts): |B|=32, q=(8,8,8,8) — matches actual counts
+
+CONDITION 3: Synthetic minibatch preserves intended (A, Y) structure
+  STATUS: PASS
+  FILE: draft_model/minibatch_design.py, build_synthetic_templates() lines 95-176
+  DETAIL: Quotas scaled from B with floor cmin_tilde=2 on positives. Features
+          initialized from stratum-specific Gaussian (moment-matched). Verified
+          actual (A,Y) counts match stored quotas for all 3 test clients.
+
+CONDITION 4: Universum points are pseudo-positive (y=1)
+  STATUS: PASS
+  FILES: draft_model/notation.py line 78 (UniversumSet has no Y field)
+         draft_model/losses.py line 58 (L_universum: y_one = torch.ones(...))
+         draft_model/server.py line 29 (aggregate_payloads: Y=np.ones(U.size()))
+         draft_model/bilevel_al.py line 119 (inner loss: log(1+exp(-f)) = l(1,f))
+  DETAIL: Universum has no Y attribute. Labels are implicitly y=1 in three places:
+          L_universum(), bilevel inner loop, and server aggregation. All consistent.
+
+CONDITION 5: Universum size depends on imbalance
+  STATUS: PASS
+  FILE: draft_model/minibatch_design.py line 204
+  DETAIL: |U| = min(Delta_s, |Ds|, Delta_k) where Delta_s = synthetic imbalance,
+          Delta_k = original minibatch imbalance. Verified:
+            Extreme: |U|=24 = min(24, 32, 110)
+            Moderate: |U|=20 = min(20, 32, 38)
+            Balanced: |U|=0  = min(0, 32, 0)
+
+CONDITION 6: EO is computed only on true positives
+  STATUS: PASS
+  FILES: draft_model/losses.py, g_EO() lines 64-75
+         draft_model/notation.py, B_plus property lines 54-58
+         draft_model/server.py, compute_eo_gap_and_accuracy() lines 89-96
+  DETAIL: g_EO receives B.B_plus = (X[Y==1], A[Y==1]). EO gap uses mask (Y==1)
+          to compute TPR per group. Confirmed: |B_plus|=9 = n1=9 out of |B|=128.
+
+CONDITION 7: Raw client data is NOT sent to the server
+  STATUS: PASS
+  FILES: draft_model/run_draft.py lines 155-182
+         draft_model/server.py lines 14-35
+  DETAIL: Payload = (Ds_send, U_send) only. Server's aggregate_payloads() reads
+          only pl.synthetic and pl.universum. The original minibatch B and client
+          data D^o are never included in any Payload object.
+
+CONDITION 8: Experiment flow in run_draft.py matches intended pipeline
+  STATUS: PASS
+  FILE: draft_model/run_draft.py lines 138-196
+  DETAIL: For each round, for each client:
+          1. B = draw_original_minibatch(client_data)  [private -> minibatch]
+          2. Ds = build_synthetic_templates(B)          [minibatch -> synthetic]
+          3. U = build_universum_templates(...)          [synthetic -> Universum]
+          4. client_round_al(B, Ds, U, ...)             [inner + outer training]
+          5. Payload(Ds_send, U_send)                   [client payload]
+          Then: aggregate_payloads() -> train_global_ridge_erm() [server]
+          Then: compute_eo_gap_and_accuracy()                    [metrics]
+          Flow matches the intended paper pipeline exactly.
+
+ADDITIONAL RUNTIME CHECKS (all passed):
+  - Server aggregation size = |Ds| + |U| (verified: 56 = 32 + 24)
+  - Universum labels in aggregation are all 1.0
+  - Ds quota sum = |Ds| (no rounding drift)
+  - Simplified client round returns finite theta (shape=(6,), norm=2.14)
+  - Full AL round returns finite theta (shape=(6,), norm=2.17)
+  - AL optimizes Ds features (X_ds changes across outer steps)
+  - INV-3: X_ds.requires_grad=True, X_u.requires_grad=True
+  - INV-4: ||grad(Ds_x)|| > 0 across all outer steps
+  - INV-5: Ds_x hash changes after outer step 1
+  - Server global model is valid and evaluable
+  - EO metrics are finite and in [0,1]
+
+================================================================================
+SECTION 3: WHAT FAILED
+================================================================================
+
+No functional failures detected. All 27 automated checks passed.
+The pipeline runs end-to-end without errors on the 2D dataset.
+
+================================================================================
+SECTION 4: WHAT IS UNCLEAR / NOTES
+================================================================================
+
+NOTE 1: Client 2 (Moderate) |B| discrepancy with paper example
+  FILE: draft_model/check_draft_examples.py
+  DETAIL: Paper Appendix 4.2.4 expects |B|=64 for Client 2 (N=900, pi_plus=0.1333).
+          Code produces |B|=60 because ceil(8/0.1333)=ceil(60.0)=60, not 64.
+          This is a rounding/formula difference in the paper example, not a code bug.
+          All other clients match exactly.
+  SEVERITY: Informational — the code follows the stated algorithm correctly.
+
+NOTE 2: Universum gradient is zero for 2D dataset client 0
+  FILE: draft_model/bilevel_al.py (INV-4 output)
+  DETAIL: ||grad(U_x)|| = 0.0 for all outer steps of client 0 on 2D data.
+          Root cause: With only 7 training points per client, the cmin_tilde=2
+          floor on synthetic positives makes Delta_s=0, so |U|=0. The U tensor
+          is empty. This is correct behavior — the Universum is not needed when
+          the synthetic batch is already balanced. The code handles this gracefully.
+  SEVERITY: Expected behavior for very small datasets. Not a bug.
+
+NOTE 3: Quota adjustment edge case (theoretical)
+  FILES: draft_model/minibatch_design.py lines 61-66 and 124-127
+  DETAIL: When the positive floor (cmin or cmin_tilde) pushes the quota total
+          above the target size, the excess is subtracted from q_a0y0. If
+          q_a0y0 is too small, it's clamped to 0 and the final total may be
+          less than the target size. This is unlikely with default parameters
+          (Ds_size=32, cmin_tilde=2) but could occur with extreme imbalance
+          AND small target sizes.
+  SEVERITY: Low risk. Did not trigger in any test. Consider adding a
+            redistribution fallback if this ever causes issues with custom params.
+
+NOTE 4: L_out uses zeta_out = 0 (not the global reference zeta)
+  FILE: draft_model/bilevel_al.py line 129
+  DETAIL: L_out is called with torch.zeros_like(zeta_t) as the reference,
+          meaning the outer regularization is ||theta||^2 not ||theta - zeta||^2.
+          The losses.py docstring says "Lout(theta) = L(theta; B_{k,t}, 0)",
+          suggesting this is intentional (outer loss regularizes toward origin).
+  SEVERITY: Informational — appears intentional per paper notation.
+
+NOTE 5: 2D dataset is too small for meaningful FL evaluation
+  DETAIL: With 30 total points (24 train, 6 test, 4 val) split across 3 clients,
+          each client gets ~7 points. Both baseline and pipeline achieve identical
+          performance (acc=0.833, EO_gap=0.0). The dataset is useful for
+          verifying the pipeline runs but not for demonstrating fairness gains.
+  SEVERITY: Informational — use Adult or larger datasets for actual evaluation.
+
+================================================================================
+SECTION 5: EXACT FILES/FUNCTIONS WHERE EACH CHECK WAS VERIFIED
+================================================================================
+
+CHECK                              FILE                               FUNCTION/LINE
+---------------------------------------------------------------------------------------------------
+Stratified (A,Y) sampling         minibatch_design.py                draw_original_minibatch() L25-92
+Synthetic preserves structure      minibatch_design.py                build_synthetic_templates() L95-176
+Universum pseudo-positive          notation.py L78, losses.py L58,   UniversumSet, L_universum()
+                                   server.py L29, bilevel_al.py L119
+Universum size = imbalance rule    minibatch_design.py                build_universum_templates() L204
+EO on true positives only          losses.py L64-75, notation.py     g_EO(), B_plus property
+                                   L54-58, server.py L89-96          compute_eo_gap_and_accuracy()
+No raw data to server              run_draft.py L155-182,            main(), aggregate_payloads()
+                                   server.py L14-35
+Pipeline flow matches paper        run_draft.py L138-196             main() loop
+Inner uses Ds+U only               bilevel_al.py L103-123            Inner loop in client_round_al()
+Outer uses B only                  bilevel_al.py L128-129            g_EO(theta, B_plus), L_out(B)
+Features are learnable (grad)      bilevel_al.py L79-80, L97-98      X_ds/X_u requires_grad=True
+Implicit differentiation correct   bilevel_al.py L141-172            Hvp, CG, grad_X_ds, grad_X_u
+Server trains on union payloads    server.py L14-68                  aggregate_payloads(), train_...
+Global model evaluable             server.py L82-97                  compute_eo_gap_and_accuracy()
+
+================================================================================
+SECTION 6: CONCLUSION
+================================================================================
+
+The implementation is consistent with the intended paper flow. All 8 specified
+conditions are satisfied. The pipeline runs end-to-end without errors. No bugs
+were found. Five informational notes were documented (quota rounding, small
+dataset behavior, zeta_out=0, paper example discrepancy, and U gradient on tiny
+data), none of which require code changes.
+
+Validation artifacts:
+  - validate_pipeline.py    (27 automated checks, all PASS)
+  - check_draft_examples.py (Appendix 4.2.4 stratum verification)
+  - outputs/draft_results.json (2D pipeline run results)
+  - This file: outputs/validation_summary.txt
+================================================================================
