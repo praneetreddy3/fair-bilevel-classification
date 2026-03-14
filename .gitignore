@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Generated outputs (regenerate with scripts)
+outputs/*.json
+outputs/*.csv
+outputs/*.txt
+outputs/*.png
+outputs/*.md
+outputs/archive/
+
+# Reference implementation (teammate's code)
+FairSynData/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
