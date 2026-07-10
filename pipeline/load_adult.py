@@ -4,12 +4,38 @@ Dataset: https://archive.ics.uci.edu/dataset/2/adult
 Target: income >50K (1) vs <=50K (0)
 Sensitive: sex (Female=0, Male=1) or race (Non-White=0, White=1)
 """
+from __future__ import annotations
+
 import os
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 
-# Default path for preprocessed Adult data
-ADULT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "FairSynData", "datasets", "adult")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Preprocessed CSVs (legacy FairSynData layout)
+ADULT_DIR = os.path.join(PROJECT_ROOT, "FairSynData", "datasets", "adult")
+# Raw UCI files: adult.data, adult.test (see https://archive.ics.uci.edu/dataset/2/adult)
+UCI_ADULT_FOLDER = os.path.join(PROJECT_ROOT, "UCIAdultdataset")
+
+# Column order matches adult.names (UCI distribution)
+ADULT_UCI_COLUMNS = [
+    "age",
+    "workclass",
+    "fnlwgt",
+    "education",
+    "education-num",
+    "marital-status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "capital-gain",
+    "capital-loss",
+    "hours-per-week",
+    "native-country",
+    "income",
+]
 
 
 def _extract_ay(df: pd.DataFrame, sensitive: str) -> tuple:
@@ -80,6 +106,52 @@ def _preprocess_adult(df: pd.DataFrame, sensitive: str = "sex") -> tuple:
     return X, A, Y
 
 
+def load_adult_from_uci_folder(folder: Optional[str] = None, sensitive: str = "sex"):
+    """
+    Load from raw UCI Adult files ``adult.data`` (train) and ``adult.test`` (test).
+    Uses the standard UCI train/test split (not a random split).
+
+    ``folder`` defaults to ``<project>/UCIAdultdataset``.
+    """
+    base = folder or UCI_ADULT_FOLDER
+    train_path = os.path.join(base, "adult.data")
+    test_path = os.path.join(base, "adult.test")
+    if not os.path.isfile(train_path) or not os.path.isfile(test_path):
+        raise FileNotFoundError(
+            f"Expected {train_path} and {test_path}. "
+            "Place UCI Adult adult.data and adult.test in UCIAdultdataset/."
+        )
+
+    train_df = pd.read_csv(
+        train_path,
+        header=None,
+        names=ADULT_UCI_COLUMNS,
+        na_values="?",
+        skipinitialspace=True,
+    )
+    # adult.test often starts with a non-data line (e.g. "|1x3 Cross validator")
+    test_df = pd.read_csv(
+        test_path,
+        header=None,
+        names=ADULT_UCI_COLUMNS,
+        na_values="?",
+        skipinitialspace=True,
+        skiprows=1,
+    )
+    # Normalize label: test file may use ">50K." with a trailing period
+    for df in (train_df, test_df):
+        df["income"] = (
+            df["income"].astype(str).str.strip().str.rstrip(".").str.replace(" ", "", regex=False)
+        )
+
+    A_train, Y_train = _extract_ay(train_df, sensitive)
+    A_test, Y_test = _extract_ay(test_df, sensitive)
+    drop_cols = ["income", "target", "sex", "race"]
+    X_train, X_test = _encode_features(train_df, test_df, drop_cols)
+
+    return (X_train, A_train, Y_train), (X_test, A_test, Y_test)
+
+
 def load_adult_from_ucimlrepo(sensitive: str = "sex", test_size: float = 0.2, seed: int = 42):
     """
     Load Adult via ucimlrepo. Requires: pip install ucimlrepo
@@ -131,12 +203,27 @@ def load_adult_from_csv(sensitive: str = "sex"):
     return (X_train, A_train, Y_train), (X_test, A_test, Y_test)
 
 
-def prepare_adult_for_draft(sensitive: str = "sex", use_ucimlrepo: bool = True):
+def prepare_adult_for_draft(
+    sensitive: str = "sex",
+    use_ucimlrepo: bool = True,
+    uci_folder: Optional[str] = None,
+):
     """
     Main entry: returns data in format expected by run_draft.py.
-    use_ucimlrepo=True: fetch from UCI (requires ucimlrepo).
-    use_ucimlrepo=False: load from CSV files.
+
+    Priority when ``use_ucimlrepo`` is True:
+    1. Local ``UCIAdultdataset/adult.data`` + ``adult.test`` (if present)
+    2. Fetch via ``ucimlrepo`` (requires ``pip install ucimlrepo``)
+
+    Set ``use_ucimlrepo=False`` to load only from FairSynData CSVs
+    (``FairSynData/datasets/adult/adult_train.csv``).
     """
-    if use_ucimlrepo:
-        return load_adult_from_ucimlrepo(sensitive=sensitive)
-    return load_adult_from_csv(sensitive=sensitive)
+    if not use_ucimlrepo:
+        return load_adult_from_csv(sensitive=sensitive)
+
+    folder = uci_folder or UCI_ADULT_FOLDER
+    data_path = os.path.join(folder, "adult.data")
+    test_path = os.path.join(folder, "adult.test")
+    if os.path.isfile(data_path) and os.path.isfile(test_path):
+        return load_adult_from_uci_folder(folder=folder, sensitive=sensitive)
+    return load_adult_from_ucimlrepo(sensitive=sensitive)

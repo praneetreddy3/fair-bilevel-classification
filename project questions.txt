@@ -1,0 +1,77 @@
+What types of impulation methods we use for each type of variables like numerical and categorical?
+Answer:
+- Numerical variables: use median imputation (robust to outliers and skewed income-related features in Adult-like tabular data).
+- Categorical variables: use mode (most frequent) imputation before encoding.
+- If missingness is meaningful, add a missing-indicator flag so the model can learn missingness patterns.
+Why:
+- Median/mode are stable, simple, and reproducible for federated-style tabular pipelines; they avoid leakage from target-driven imputers and are easy to apply consistently across clients.
+
+When normalization should happen before train test splitting or not
+Answer:
+- Split first, normalize second.
+- Fit scaler only on train; transform validation/test with the same fitted scaler.
+Why:
+- Fitting normalization before split leaks test distribution into training and inflates performance estimates.
+- In this project, scaling is correctly applied after split (train fit, val/test transform).
+
+How about normalization for categorical variables
+Answer:
+- Do not z-score raw categorical values.
+- First encode categories (one-hot/ordinal as appropriate), then:
+  - keep one-hot binaries as 0/1 (usually no scaling needed),
+  - scale only continuous numeric columns.
+Why:
+- Scaling category IDs creates fake numeric distances; one-hot preserves category semantics.
+
+What is the validation done for synthetic before DP or after DP?
+Answer:
+- Both should be tracked, but for model-selection fairness to deployment, primary validation should be after the exact DP stage used in training.
+- Recommended:
+  1) Pre-DP validation: sanity check synthetic quality/fairness signal.
+  2) Post-DP validation: final selection/reporting metric.
+Why:
+- DP noise can materially change EO gap and accuracy; selecting from pre-DP metrics alone can choose unstable configs.
+
+When should we apply differential privacy to the synthetic dataset? 
+Answer:
+- In this project, use configurable placement via `dp_variant`:
+  - `pre_server`: apply DP on client payload synthetic features before sending.
+  - `post_server`: apply DP after aggregation on server.
+  - `both`: both stages.
+  - `none`: ablation/no DP.
+- Practical recommendation from current results:
+  - Start with `pre_server` and tune `dp_sigma` (e.g., 0.1-0.5).
+  - Avoid strong `post_server` noise at high sigma in this setup because it degraded both accuracy and EO.
+Why:
+- Pre-server aligns better with federated privacy intent (protect transmission-level payloads).
+- Post-server can over-perturb already mixed synthetic data if sigma is high.
+
+Why only these algorithm options are used here
+Answer:
+- The project intentionally uses a compact set of options (`none/pre_server/post_server/both`) to isolate one key design axis: DP placement.
+- This keeps ablations interpretable: performance changes can be attributed to where DP is injected, not many simultaneous algorithm changes.
+- The core bilevel + fairness objective remains fixed to preserve scientific comparability with prior runs and documentation.
+- A small option set also improves reproducibility and debugging speed for iterative professor-facing experiments.
+
+Should the model accuracy be similar or higher than the reference system?
+Answer:
+- For this project goal (fairness-constrained learning), matching or exceeding pure reference accuracy is ideal but not guaranteed.
+- Current measured Adult results show baseline/reference is still higher in accuracy:
+  - baseline/reference: 84.63%
+  - best pipeline in latest grid: 70.51%
+- So currently we are trading accuracy for fairness behavior, not outperforming baseline on accuracy.
+
+Did we run the same Adult dataset in FairSynData reference implementation?
+Answer:
+- We attempted to run FairSynData with `--dataset_name adult`, but that code path is not implemented in the current FairSynData copy.
+- In FairSynData, preprocessing/splitting currently supports `law` and `dutch` only; Adult causes a preprocessing failure.
+- Therefore, same-Adult direct FairSynData-vs-pipeline replication is not yet available without extending FairSynData dataset handlers.
+
+Did FairSynData-style stopping/hyperparameters improve Adult accuracy here?
+Answer:
+- We added a FairSynData-like stopping option in this pipeline:
+  - `stop_criterion=grad_inf`, `outer_tol_xhat=1e-6`, `J_outer=3`
+- Comparison on Adult (same split):
+  - EO-gap stopping (`stop_criterion=eo_gap`): accuracy 69.65%, EO 6.74%
+  - FairSyn-style grad-inf stopping: accuracy 67.23%, EO 15.47%
+- Conclusion: in current runs, FairSyn-style stopping did not improve accuracy.

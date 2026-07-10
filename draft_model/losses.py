@@ -1,5 +1,8 @@
 """
-Loss functions for the bilevel fairness pipeline (Eq. 2-4 from draft paper).
+Loss functions for the bilevel fairness pipeline.
+
+Updated to use the smooth TPR-gap EO surrogate from the new draft:
+g_EO = |TPR_1 - TPR_0| with sigmoid smoothing around threshold tau.
 
 Model: f_θ(x,a) = θᵀ[x; a], linear classifier with input dim d+1.
 Labels y ∈ {0,1}, sensitive attribute a ∈ {0,1}.
@@ -38,7 +41,7 @@ def L_base(theta: torch.Tensor, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
     y = _to_torch(Y, device=theta.device)
     logits = f_theta(theta, Xa)
     loss_data = logistic_loss_per_sample(y, logits).mean()
-    reg = (lambda_theta / (2 * (d_plus_1 ** 2))) * torch.sum((theta - zeta) ** 2)
+    reg = (lambda_theta / 2.0) * torch.sum((theta - zeta) ** 2)
     return loss_data + reg
 
 
@@ -54,15 +57,62 @@ def L_universum(theta: torch.Tensor, X: np.ndarray, A: np.ndarray,
     return lambda_U * loss_u
 
 
-def g_EO(theta: torch.Tensor, X_plus: np.ndarray, A_plus: np.ndarray) -> torch.Tensor:
-    """Eq. 4: EO surrogate on true positives B⁺ — g = (1/|B⁺|) Σ (s−s̄)·f_θ(x,s)."""
-    if len(X_plus) == 0:
-        return torch.tensor(0.0, device=theta.device)
-    Xa = pack_xa(X_plus, A_plus).to(theta.device)
-    s = _to_torch(A_plus, device=theta.device)
-    s_bar = s.mean()
-    f = f_theta(theta, Xa)
-    return ((s - s_bar) * f).mean()
+def compute_tpr_s(
+    theta: torch.Tensor,
+    X: np.ndarray,
+    A: np.ndarray,
+    Y: np.ndarray,
+    s_group: int,
+    tau: float = 0.0,
+    alpha: float = 10.0,
+) -> torch.Tensor:
+    """
+    Smooth TPR estimate for group s on Y=1 slice:
+    TPR_s ≈ mean( sigmoid(alpha * (f_theta(x,s) - tau)) | Y=1, A=s ).
+    """
+    y = np.asarray(Y)
+    a = np.asarray(A)
+    mask = (y == 1) & (a == s_group)
+    if not np.any(mask):
+        return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
+    Xa = pack_xa(np.asarray(X)[mask], a[mask]).to(theta.device)
+    logits = f_theta(theta, Xa)
+    smooth_pred = torch.sigmoid(alpha * (logits - tau))
+    return smooth_pred.mean()
+
+
+def compute_tpr_gap_surrogate(
+    theta: torch.Tensor,
+    X: np.ndarray,
+    A: np.ndarray,
+    Y: np.ndarray,
+    tau: float = 0.0,
+    alpha: float = 10.0,
+) -> torch.Tensor:
+    """
+    Section 4 surrogate: smooth absolute TPR gap.
+
+    Uses differentiable approximation:
+      g = sqrt((TPR_1 - TPR_0)^2 + eps)
+    """
+    tpr0 = compute_tpr_s(theta, X, A, Y, s_group=0, tau=tau, alpha=alpha)
+    tpr1 = compute_tpr_s(theta, X, A, Y, s_group=1, tau=tau, alpha=alpha)
+    diff = tpr1 - tpr0
+    return torch.sqrt(diff * diff + 1e-12)
+
+
+def g_EO(
+    theta: torch.Tensor,
+    X: np.ndarray,
+    A: np.ndarray,
+    Y: np.ndarray,
+    tau: float = 0.0,
+    alpha: float = 10.0,
+) -> torch.Tensor:
+    """EO surrogate wrapper (TPR-gap, smooth)."""
+    if len(Y) == 0 or not np.any(np.asarray(Y) == 1):
+        return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
+    return compute_tpr_gap_surrogate(theta, X, A, Y, tau=tau, alpha=alpha)
 
 
 def Lin(theta: torch.Tensor,

@@ -113,17 +113,13 @@ def main():
             u_a0 = int(np.sum(U.A == 0))
             u_a1 = int(np.sum(U.A == 1))
             print(f"     A distribution: a=0: {u_a0}, a=1: {u_a1}")
-            minority_a = 0 if B.q_a0y1 < B.q_a1y1 else (1 if B.q_a1y1 < B.q_a0y1 else None)
-            if minority_a is not None:
-                all_minority = np.all(U.A == minority_a)
-                print(f"     minority-positive group: a={minority_a}, all_minority={all_minority}")
-                results.append(validate_condition(
-                    f"[{label}] U assigned to minority-positive group",
-                    all_minority,
-                    f"minority_a={minority_a}, a0={u_a0}, a1={u_a1}"
-                ))
-            else:
-                print(f"     equal positives; 50/50 split expected")
+            balanced = abs(u_a0 - u_a1) <= 1
+            print(f"     S-balanced split expected, balanced={balanced}")
+            results.append(validate_condition(
+                f"[{label}] U uses S-balanced split",
+                balanced,
+                f"a0={u_a0}, a1={u_a1}"
+            ))
         results.append(validate_condition(
             f"[{label}] |U| = min(Delta_s, |Ds|, Delta)",
             U.size() == expected_u_size,
@@ -230,6 +226,8 @@ def main():
 
     # --- V11: Full AL round (if feasible) ---
     print("\n--- Full AL Round (1 outer step) ---")
+    X_ds_new = None
+    X_u_new = None
     try:
         theta_al, X_ds_new, X_u_new = client_round_al(
             B, Ds, U, zeta,
@@ -261,13 +259,13 @@ def main():
     # --- V12: Server global training ---
     print("\n--- Server Global Training ---")
     Ds_send = SyntheticMinibatch(
-        X=X_ds_new if 'X_ds_new' in dir() else Ds.X,
+        X=X_ds_new if X_ds_new is not None else Ds.X,
         A=Ds.A, Y=Ds.Y,
         q_a0y0=Ds.q_a0y0, q_a0y1=Ds.q_a0y1, q_a1y0=Ds.q_a1y0, q_a1y1=Ds.q_a1y1,
         Delta_s=Ds.Delta_s,
     )
     U_send = UniversumSet(
-        X=X_u_new if 'X_u_new' in dir() else U.X,
+        X=X_u_new if X_u_new is not None else U.X,
         A=U.A,
     )
     pl = Payload(synthetic=Ds_send, universum=U_send)

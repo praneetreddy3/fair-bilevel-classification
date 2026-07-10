@@ -1,0 +1,15 @@
+2026-04-29 18:37:39,957 || INFO || =========== 20260429_183739 - start main.py; mainid = 1 ===========
+2026-04-29 18:37:39,957 || ERROR || =========== 20260429_183739 - start main.py; mainid = 1 ===========
+2026-04-29 18:37:39,966 || INFO || alg_params: {'dataset_name': 'adult', 'data_path': 'dummy_run', 'fair_constr': 'SP', 'main_verbose_logger': False, 'constr_imposed_orig': 'Y', 'constr_imposed_syn': 'Y', 'syn_1_skip': False, 'syn_1_mainid': [432], 'syn_2_skip': True, 'b_limit_process': False, 'rho_o': 1000.0, 'rho_s': 1000.0, 'rho_o_list': [0, 10, 100.0, 1000.0, 10000.0], 'rho_s_list': [0], 'rho_comb_setting': 'allcomb', 'rho_setting': [(0, 0), (10, 0), (100.0, 0), (1000.0, 0), (10000.0, 0)], 'lambda_o': 0.0001, 'lambda_i': 0.0001, 'lambda_xhat': 0, 'N_s_same_as_train': True, 'N_s_ratio': 0.1, 'N_s': 800, 'priv_row_ratio': 0.5, 'upriv_row_ratio': 0.5, 'priv_label_pos': 0.5, 'priv_label_neg': 0.5, 'upriv_label_pos': 0.5, 'upriv_label_neg': 0.5, 'alpha_xhat': 0.1, 'is_alpha_xhat_adaptive': True, 'theta_setting': 'prev_theta', 'outer_tol_xhat': 1e-06, 'inner_tol': 1e-06, 'K': 3}
+2026-04-29 18:37:39,967 || INFO || train_and_predict_params: {'lossFunc': 'LogisticLoss', 'optimSet': 'L-BFGS', 'batch_mode': 'full-batch', 'batch_size': 1024, 'epochs': 1, 'b_early_stop': False, 'early_stop_patience': 10, 'early_stop_threshold': 1e-09, 'verbose_logger': False, 'verbose_db': True, 'learning_rate': 1, 'b_decaying_stepsize': False, 'decaying_factor': 0.8, 'decaying_patience': 5, 'min_lr': 1e-05}
+2026-04-29 18:37:39,967 || INFO || ctgan_params: {'synthesizer_alg': 'dpctgan', 'seed': 42, 'epochs': 300, 'batch_size': 500, 'pac': 10, 'generator_lr': 0.0002, 'discriminator_lr': 0.0002, 'verbose': False, 'num_rows': 1000, 'num_rows_as_real': True, 'N_s_ratio': 0.1, 'show_diagnostic': False, 'show_quality_report': False, 'plot_column_figs': False, 'clip_coeff': 0.1, 'sigma': 1, 'target_epsilon': 3, 'target_delta': 1e-05}
+2026-04-29 18:37:39,967 || INFO || Loading training & testing datasets ...
+2026-04-29 18:37:39,969 || ERROR || Traceback (most recent call last):
+  File "C:\Users\HP\Desktop\Research project\FairSynData\main.py", line 589, in <module>
+    main(args, mainid)
+  File "C:\Users\HP\Desktop\Research project\FairSynData\main.py", line 456, in main
+    train_data, test_data = utils.load_multi_data(alg_params.data_path)
+  File "C:\Users\HP\Desktop\Research project\FairSynData\utils\utils.py", line 61, in load_multi_data
+    files = [f for f in os.listdir(dir_name) if f.endswith('.csv')]
+FileNotFoundError: [WinError 3] The system cannot find the path specified: 'datasets/dummy_run'
+

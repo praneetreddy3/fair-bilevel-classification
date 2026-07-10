@@ -174,11 +174,16 @@ def build_universum_templates(
     B: OriginalMinibatch = None,
 ) -> UniversumSet:
     """
-    Build Universum U: pseudo-positive points placed at midpoints between
-    minority-positive and negative examples from B (Eq. 7).
+    Build S-balanced Y-Universum pseudo-positives (Section 6.8 style).
 
-    Size: |U| = min(Δˢ, |Dˢ|, Δₖ). All U points assigned to the
-    minority-positive group to balance TPR across sensitive groups.
+    Size: |U| = min(Δˢ, |Dˢ|, Δₖ). Sensitive attribute is split as evenly as
+    possible across S={0,1}. For each group s, create |U_s| points as
+    midpoints between:
+      - a positive point with A=s (prefer minority-positive within group), and
+      - a negative point from the opposite group A=1-s (fallback: any negative).
+
+    This keeps Universum balanced across sensitive groups while targeting class
+    imbalance through pseudo-positive geometry.
     """
     if rng is None:
         rng = np.random.default_rng(42)
@@ -187,43 +192,64 @@ def build_universum_templates(
     if U_size == 0:
         return UniversumSet(X=np.zeros((0, d)), A=np.zeros(0))
 
-    # Identify minority-positive group (fewer y=1 examples)
-    if q_a0y1 is not None and q_a1y1 is not None:
-        if q_a0y1 < q_a1y1:
-            minority_a = 0
-        elif q_a1y1 < q_a0y1:
-            minority_a = 1
-        else:
-            minority_a = None
-    else:
-        minority_a = None
+    # S-balanced sensitive assignment for U.
+    n0 = U_size // 2
+    n1 = U_size - n0
+    A = np.array([0.0] * n0 + [1.0] * n1, dtype=np.float64)
+    rng.shuffle(A)
 
-    # Assign sensitive attribute
-    if minority_a is not None:
-        A = np.full(U_size, minority_a, dtype=np.float64)
-    else:
-        half = U_size // 2
-        A = np.array([0.0] * half + [1.0] * (U_size - half), dtype=np.float64)
-        rng.shuffle(A)
-
-    # Place points at midpoint of (minority-positive, negative) pairs
+    # Place points by group-conditioned midpoint construction.
     X = np.zeros((U_size, d), dtype=np.float64)
-    n_minority_pos = 0
-    n_neg = 0
-    if B is not None and minority_a is not None:
-        mask_minority_pos = (B.A == minority_a) & (B.Y == 1)
-        mask_neg = B.Y == 0
-        X_minority_pos = B.X[mask_minority_pos]
-        X_neg = B.X[mask_neg]
-        n_minority_pos = X_minority_pos.shape[0]
-        n_neg = X_neg.shape[0]
+    if B is not None and len(B.Y) > 0:
+        # Optional group-level minority-positive preference.
+        # If unavailable/tied, fallback is simply positives from the same group.
+        prefer_group_minority = None
+        if q_a0y1 is not None and q_a1y1 is not None and q_a0y1 != q_a1y1:
+            prefer_group_minority = 0 if q_a0y1 < q_a1y1 else 1
 
-    if n_minority_pos > 0 and n_neg > 0:
+        X_pos_by_group = {
+            0: B.X[(B.A == 0) & (B.Y == 1)],
+            1: B.X[(B.A == 1) & (B.Y == 1)],
+        }
+        X_neg_by_group = {
+            0: B.X[(B.A == 0) & (B.Y == 0)],
+            1: B.X[(B.A == 1) & (B.Y == 0)],
+        }
+        X_neg_any = B.X[B.Y == 0]
+
         for i in range(U_size):
-            idx_pos = rng.integers(0, n_minority_pos)
-            idx_neg = rng.integers(0, n_neg)
-            X[i] = (X_minority_pos[idx_pos] + X_neg[idx_neg]) / 2.0
+            s = int(A[i])
+            other = 1 - s
+
+            # Positive source: prefer in-group positives; if missing, any positive.
+            X_pos = X_pos_by_group[s]
+            if X_pos.shape[0] == 0:
+                X_pos = B.X[B.Y == 1]
+
+            # If global minority-positive group exists and has positives, prefer it when aligned.
+            if (
+                prefer_group_minority is not None
+                and prefer_group_minority == s
+                and X_pos_by_group[s].shape[0] > 0
+            ):
+                X_pos = X_pos_by_group[s]
+
+            # Negative source: prefer opposite group negatives, fallback any negative.
+            X_neg = X_neg_by_group[other]
+            if X_neg.shape[0] == 0:
+                X_neg = X_neg_any
+
+            if X_pos.shape[0] > 0 and X_neg.shape[0] > 0:
+                idx_pos = rng.integers(0, X_pos.shape[0])
+                idx_neg = rng.integers(0, X_neg.shape[0])
+                X[i] = (X_pos[idx_pos] + X_neg[idx_neg]) / 2.0
+            else:
+                X[i] = rng.standard_normal(d) * 0.5
     else:
         X = rng.standard_normal((U_size, d)).astype(np.float64) * 0.5
+
+    # Defensive balance check (keeps Section 6.8 intent explicit).
+    # Difference can be at most 1 when U_size is odd.
+    assert abs(np.sum(A == 0) - np.sum(A == 1)) <= 1
 
     return UniversumSet(X=X, A=A)

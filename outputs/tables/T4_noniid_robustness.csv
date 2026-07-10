@@ -1,0 +1,9 @@
+dataset,partition,accuracy,EO_gap
+credit,iid (winner),0.7700,0.0003
+credit,dirichlet alpha=1.0,0.7710,0.0222
+credit,dirichlet alpha=0.5,0.7727,0.0394
+credit,dirichlet alpha=0.1,FAILED,ZeroDivisionError/RuntimeError: extreme skew starves a client of data
+adult,iid (winner),0.6743,0.0273
+adult,dirichlet alpha=1.0,0.6443,0.0392
+adult,dirichlet alpha=0.5,0.6546,0.0328
+adult,dirichlet alpha=0.1,FAILED,ZeroDivisionError/RuntimeError: extreme skew starves a client of data
