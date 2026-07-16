@@ -7,3 +7,6 @@ matplotlib>=3.4.0
 
 # Required for --data adult (UCI Adult dataset loader)
 ucimlrepo>=0.0.3
+
+# Required for --data credit (reads the .xls in CreditData/)
+xlrd>=2.0.1
