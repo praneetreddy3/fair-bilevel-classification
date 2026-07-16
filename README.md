@@ -19,11 +19,13 @@ application), UCI Adult (reference dataset the method was first validated on), G
 pip install -r requirements.txt
 ```
 
-Then place the dataset files (not committed for size/licensing where noted):
+Raw datasets are **not committed** (gitignored — large, and easy to re-fetch). Either drop them
+in yourself or let the loaders fetch them automatically:
 - **Credit:** download "Default of Credit Card Clients" (UCI id 350) and drop the `.xls`/`.xlsx`/`.csv`
   into `CreditData/` — the loader (`pipeline/load_credit.py`) auto-detects the file and header row.
-- **Adult:** `UCIAdultdataset/adult.data` + `adult.test` are already included; if missing, the
-  loader falls back to `ucimlrepo` (needs internet).
+  If the folder is empty it falls back to `ucimlrepo` (needs `pip install ucimlrepo` + internet).
+- **Adult:** drop `adult.data` + `adult.test` into `UCIAdultdataset/`, or let
+  `pipeline/load_adult.py` fetch via `ucimlrepo` automatically if the folder is empty/missing.
 
 ## Quick start
 
@@ -126,14 +128,15 @@ draft_model/        core method
   dp.py               DP variants: none / pre_server / post_server / both
   notation.py         data structures
 pipeline/           dataset loaders (load_adult.py, load_credit.py, load_2d.py)
-CreditData/         credit dataset file goes here (.xls/.xlsx/.csv) — not committed
-UCIAdultdataset/    Adult raw files
+CreditData/         credit dataset file goes here (.xls/.xlsx/.csv) — gitignored, not committed
+UCIAdultdataset/    Adult raw files — gitignored, not committed (loader auto-fetches if empty)
 FairSynData/         reference-paper implementation (Law/Dutch) — gitignored, teammate's code
 outputs/            result JSONs + figures + tables/ ; outputs/archive/ = superseded runs (gitignored)
 figures/            polished result figures
 docs/               guides & reports (index below), paper PDF, project questions
 scripts/            reproduction sweep scripts (sweep_*.sh)
 archive/            superseded/legacy scripts kept for local reference (gitignored)
+logs/               runtime logs — gitignored, not committed
 plot_results.py     regenerate figures from outputs/draft_results_*.json
 build_tables.py     regenerate paper tables (T1-T5) from outputs/*.json
 verify_step3.py     code-correctness checks (compile, NaN scan, baseline-vs-sklearn, ablation sanity, repro)

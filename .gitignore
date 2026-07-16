@@ -24,6 +24,14 @@ archive/
 # Reference implementation (teammate's code)
 FairSynData/
 
+# Raw datasets (large, re-downloadable via the loaders / ucimlrepo fallback)
+CreditData/
+UCIAdultdataset/
+
+# Runtime logs
+logs/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
