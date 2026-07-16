@@ -24,11 +24,16 @@ draft_model/        core method
 pipeline/           dataset loaders (load_adult.py, load_credit.py, load_2d.py)
 CreditData/         put the credit dataset file here (.xls/.csv)
 UCIAdultdataset/    Adult raw files
-outputs/            result JSONs + canonical figures
+FairSynData/        reference-paper implementation (Law/Dutch)
+outputs/            current result JSONs + figures + tables/ ; outputs/archive/ = old runs
 figures/            polished result figures
-docs/               all guides & reports (see index below)
+docs/               all guides & reports (see index below), + paper PDF, project questions
+scripts/            reproduction sweep scripts (sweep_*.sh)
+archive/            superseded/legacy scripts kept for reference (gitignored)
 plot_results.py     regenerate figures from outputs/draft_results_*.json
-VSCODE_AGENT_BRIEF.md  hand-off brief for the VS Code coding agent (rename to CLAUDE.md to auto-load)
+build_tables.py     regenerate paper tables (T1–T5) from outputs/*.json
+verify_step3.py     code-correctness checks (compile, NaN, baseline vs sklearn)
+VSCODE_AGENT_BRIEF.md  hand-off brief for the VS Code agent (rename to CLAUDE.md to auto-load)
 ```
 
 ## Documentation index (`docs/`)
@@ -39,6 +44,8 @@ VSCODE_AGENT_BRIEF.md  hand-off brief for the VS Code coding agent (rename to CL
 | `docs/CREDIT_RISK_RUNBOOK.md` | Credit Risk: datasets, scenarios, why each method is preferred. |
 | `docs/ENHANCEMENT_GUIDE.md` | How to raise accuracy: levers, constants, the logical move. |
 | `docs/RESULTS.md` | Current results table + figures + open issues. |
+| `docs/PAPER_TABLES.md` | The five paper tables (T1–T5) with the final numbers. |
+| `docs/CHANGES.md` | What changed vs the previous repo, and how to verify the code. |
 | `docs/STATUS_REPORT.md` | Short status summary (for the professor). |
 | `docs/PROJECT_GUIDE.md`, `docs/WORKFLOW.md` | Original method walkthrough + architecture. |
 

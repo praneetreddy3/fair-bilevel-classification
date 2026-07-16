@@ -17,17 +17,28 @@ K=5 clients) plus 5-seed reruns of the winner. Figures via `python plot_results.
 | Credit | 0.737 ± 0.023 | 0.068 ± 0.013 | 0.452 ± 0.015 | 0.742 / 0.069 |
 | Adult  | 0.720 ± 0.029 | 0.083 ± 0.057 | 0.568 ± 0.021 | 0.794 / 0.162 |
 
-## Verdict
+## Verdict (calibrated, 5-seed — see docs/PAPER_TABLES.md)
 
-- **Credit — as expected / better.** The intercept fix lifted accuracy from ~58–68% to
-  **77%**, matching or beating its own baseline (75%) while the EO gap drops to ~0 (single
-  seed) / 0.07 (5-seed). Best private option: `pre_server, rho0.1, eps0.05` → acc 0.723,
-  EO 0.016.
-- **Adult — fairness improves, raw accuracy dips due to threshold tuning.** The pipeline
-  roughly halves the EO gap (0.164 → ~0.08) but accuracy falls to ~72% because
-  `--tune_threshold` optimises *balanced* accuracy (better minority recall) at the cost of
-  raw accuracy. To recover Adult's ~84% raw accuracy, run Adult with
-  `--tune_threshold false`, or report **balanced accuracy** (~0.75) and PR-AUC instead.
+The intercept fix was essential and worked: both baselines are now sane
+(**Adult 85.2%**, Credit 75.9%). But once the baselines are properly calibrated, the earlier
+dramatic "fairness win" shrinks — because the huge pre-fix EO gaps were themselves artifacts
+of the miscalibration. Honest picture:
+
+- **Credit:** pipeline accuracy (0.737) ≈ baseline (0.759); EO gap ≈ baseline (0.068 vs
+  0.054). The calibrated baseline is *already fair*, so the method adds little here and is
+  slightly worse on DP/EOD (0.125 vs 0.024). The old 0.438→0.021 story was fixing a broken
+  baseline, not beating a fair one.
+- **Adult:** pipeline reduces the demographic-parity gap (0.174 → 0.108) but not EO
+  (~0.085 either way), at a large accuracy cost (0.852 → 0.699). Turning `--tune_threshold`
+  off restored the *baseline* to 85%, but the *pipeline* stays ~70% — that gap is
+  structural (linear model + fairness + tiny synthetic set), and needs the MLP capacity
+  upgrade, not a flag.
+- **Ablations:** removing Universum worsens EO (credit 0.00→0.05, adult 0.03→0.16), so the
+  **S-balanced Universum is the active fairness mechanism**; zeroing the ρ penalty
+  (`fairness_off`) barely changes EO, i.e. the augmented-Lagrangian term adds little on top.
+
+**Known limitation:** `--dirichlet_alpha 0.1` crashes (extreme skew starves a client of
+data) — the partitioner needs a minimum-samples-per-client guard.
 
 ## Caveats
 

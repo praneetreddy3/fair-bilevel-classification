@@ -18,6 +18,9 @@ env/
 # Generated outputs (keep key results, ignore intermediate files)
 outputs/archive/
 
+# Archived legacy scripts (kept locally, not needed on GitHub)
+archive/
+
 # Reference implementation (teammate's code)
 FairSynData/
 
