@@ -52,8 +52,10 @@ python plot_results.py
 # 5) Rebuild the paper tables (T1-T5) + docs/PAPER_TABLES.md
 python build_tables.py
 
-# 6) Correctness checks (compile, NaN scan, sklearn-baseline parity, ablation sanity, repro)
-python verify_step3.py
+# 6) Verification harness: compile, smoke run, sklearn-baseline parity, adult
+#    regression, ablation sanity, determinism -- self-contained, no dependency
+#    on pre-existing outputs/*.json
+python verify.py
 ```
 
 ## Key flags
@@ -139,7 +141,7 @@ archive/            superseded/legacy scripts kept for local reference (gitignor
 logs/               runtime logs — gitignored, not committed
 plot_results.py     regenerate figures from outputs/draft_results_*.json
 build_tables.py     regenerate paper tables (T1-T5) from outputs/*.json
-verify_step3.py     code-correctness checks (compile, NaN scan, baseline-vs-sklearn, ablation sanity, repro)
+verify.py           verification harness (compile, smoke run, baseline-vs-sklearn, adult regression, ablation sanity, determinism)
 VSCODE_AGENT_BRIEF.md  hand-off brief for the VS Code agent (rename to CLAUDE.md to auto-load)
 ```
 
