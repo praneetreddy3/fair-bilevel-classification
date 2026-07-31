@@ -10,8 +10,10 @@ Credit: winner config (`dp=none, rho=0.05, eps=0.1, tune_threshold=true`). Adult
 |---|---|---|---|---|---|---|---|
 | credit | baseline | 0.7594 +/- 0.0202 | 0.4958 +/- 0.0041 | 0.6219 +/- 0.0016 | 0.6049 +/- 0.0012 | 0.7073 +/- 0.0008 | 0.4946 +/- 0.0011 |
 | credit | pipeline | 0.7372 +/- 0.0229 | 0.4520 +/- 0.0153 | 0.5488 +/- 0.0212 | 0.6159 +/- 0.0095 | 0.6831 +/- 0.0086 | 0.4410 +/- 0.0141 |
-| adult | baseline | 0.8521 +/- 0.0005 | 0.6557 +/- 0.0014 | 0.7808 +/- 0.0008 | 0.7637 +/- 0.0009 | 0.9032 +/- 0.0004 | 0.7597 +/- 0.0005 |
-| adult | pipeline | 0.6993 +/- 0.0224 | 0.5592 +/- 0.0120 | 0.6651 +/- 0.0160 | 0.7365 +/- 0.0109 | 0.8145 +/- 0.0162 | 0.5556 +/- 0.0217 |
+| adult | baseline | 0.8452 +/- 0.0002 | 0.6528 +/- 0.0006 | 0.7766 +/- 0.0003 | 0.7660 +/- 0.0004 | 0.8877 +/- 0.0003 | 0.7410 +/- 0.0005 |
+| adult | pipeline | 0.6962 +/- 0.0084 | 0.5599 +/- 0.0086 | 0.6639 +/- 0.0073 | 0.7383 +/- 0.0085 | 0.8163 +/- 0.0063 | 0.5613 +/- 0.0088 |
+| law | baseline | 0.7786 +/- 0.0144 | 0.8611 +/- 0.0108 | 0.6523 +/- 0.0047 | 0.6150 +/- 0.0039 | 0.8732 +/- 0.0002 | 0.9794 +/- 0.0001 |
+| law | pipeline | 0.6999 +/- 0.0191 | 0.8057 +/- 0.0174 | 0.6162 +/- 0.0208 | 0.6508 +/- 0.0393 | 0.7608 +/- 0.0431 | 0.9578 +/- 0.0112 |
 
 ## T2: Fairness (mean +/- std, 5 seeds)
 
@@ -21,8 +23,10 @@ Same configs as T1.
 |---|---|---|---|---|
 | credit | baseline | 0.0235 +/- 0.0016 | 0.0537 +/- 0.0185 | 0.0279 +/- 0.0027 |
 | credit | pipeline | 0.1246 +/- 0.0352 | 0.0675 +/- 0.0128 | 0.1264 +/- 0.0369 |
-| adult | baseline | 0.1740 +/- 0.0006 | 0.0843 +/- 0.0035 | 0.0843 +/- 0.0035 |
-| adult | pipeline | 0.1077 +/- 0.0748 | 0.0863 +/- 0.0375 | 0.1161 +/- 0.0178 |
+| adult | baseline | 0.1420 +/- 0.0014 | 0.0189 +/- 0.0025 | 0.0526 +/- 0.0014 |
+| adult | pipeline | 0.1351 +/- 0.0586 | 0.0687 +/- 0.0459 | 0.1116 +/- 0.0309 |
+| law | baseline | 0.1908 +/- 0.0053 | 0.3808 +/- 0.0057 | 0.4001 +/- 0.0166 |
+| law | pipeline | 0.2430 +/- 0.0713 | 0.2624 +/- 0.0769 | 0.2324 +/- 0.0934 |
 
 ## T3: Sensitivity sweep (single seed 42)
 
@@ -61,11 +65,11 @@ Winner config re-run with `--partition dirichlet --dirichlet_alpha {1.0,0.5,0.1}
 
 | dataset | partition | accuracy | EO_gap |
 |---|---|---|---|
-| credit | iid (winner) | 0.7700 | 0.0003 |
+| credit | iid (winner) | 0.7105 | 0.0820 |
 | credit | dirichlet alpha=1.0 | 0.7710 | 0.0222 |
 | credit | dirichlet alpha=0.5 | 0.7727 | 0.0394 |
 | credit | dirichlet alpha=0.1 | FAILED | ZeroDivisionError/RuntimeError: extreme skew starves a client of data |
-| adult | iid (winner) | 0.6743 | 0.0273 |
+| adult | iid (winner) | 0.6965 | 0.0635 |
 | adult | dirichlet alpha=1.0 | 0.6443 | 0.0392 |
 | adult | dirichlet alpha=0.5 | 0.6546 | 0.0328 |
 | adult | dirichlet alpha=0.1 | FAILED | ZeroDivisionError/RuntimeError: extreme skew starves a client of data |
@@ -76,11 +80,11 @@ Winner config vs one-flag-flipped variants: no Universum, fairness off (rho forc
 
 | dataset | variant | accuracy | EO_gap | F1 | DP_gap | EOD_gap |
 |---|---|---|---|---|---|---|
-| credit | full (winner) | 0.7700 | 0.0003 | 0.4733 | 0.1299 | 0.1472 |
+| credit | full (winner) | 0.7105 | 0.0820 | 0.4417 | 0.1152 | 0.1117 |
 | credit | no_universum | 0.7073 | 0.0487 | 0.4182 | 0.0052 | 0.0151 |
 | credit | fairness_off | 0.7700 | 0.0003 | 0.4733 | 0.1299 | 0.1472 |
 | credit | no_intercept | 0.7463 | 0.0217 | 0.4017 | 0.0102 | 0.0293 |
-| adult | full (winner) | 0.6743 | 0.0273 | 0.5575 | 0.1502 | 0.0756 |
+| adult | full (winner) | 0.6965 | 0.0635 | 0.5609 | 0.1342 | 0.0635 |
 | adult | no_universum | 0.7447 | 0.1571 | 0.5729 | 0.0208 | 0.1571 |
 | adult | fairness_off | 0.7162 | 0.0001 | 0.5880 | 0.2268 | 0.1538 |
 | adult | no_intercept | 0.6926 | 0.2277 | 0.5185 | 0.0040 | 0.2277 |

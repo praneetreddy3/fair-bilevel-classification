@@ -1,160 +1,178 @@
 # Fair Bilevel Classification — Federated, Fair, Privacy-Aware
 
-A collaborative (federated) binary-classification framework where each client shares only a
-small **synthetic + Universum** dataset instead of raw data. The server pools these and trains
-a global model that is both **accurate** and **fair** (Equal Opportunity — equal true-positive
-rate across sensitive groups), with optional **differential-privacy** noise.
+A federated binary-classification method where each client shares only a small
+**synthetic + Universum** dataset with the server — never raw data. Each client runs an
+inner-outer **bilevel Augmented-Lagrangian** solver: the inner level fits a local model on
+its synthetic data, the outer level uses implicit differentiation (conjugate-gradient
+Hessian-vector products) to nudge that synthetic data so the server's aggregated model is
+both **accurate** and **fair** (Equal Opportunity — equal true-positive rate across a
+sensitive attribute), with optional **differential-privacy** noise on the client→server
+payload.
 
-**Lead:** Praneet Chinthala · **Contributor:** Yanjia (German Credit)
+## Relationship to the reference paper
 
-**Applications evaluated:** Credit Risk Prediction (Default of Credit Card Clients — main
-application), UCI Adult (reference dataset the method was first validated on), German Credit
-(secondary, see caveats below).
+This repository is a from-scratch reimplementation of the bilevel fairness method from
+the accompanying reference implementation in [`FairSynData/`](FairSynData/) (the
+original authors' code, including the Law School dataset it was validated on), extended
+with:
+- **Universum pseudo-positives** (`draft_model/minibatch_design.py`) — S-balanced
+  synthetic pseudo-positive points that turn out to be the primary fairness mechanism
+  (see the ablations in `docs/PAPER_TABLES.md`, T5).
+- **Differential-privacy variants** (`draft_model/dp.py`) — none / pre-server /
+  post-server / both, so the privacy-accuracy-fairness trade-off is a flag, not a rewrite.
+- **Non-IID client partitioning** (`--partition dirichlet`) and two additional
+  applications beyond Law: UCI Adult and the UCI "Default of Credit Card Clients" dataset.
 
----
+`FairSynData/` is kept for reference and comparison but is gitignored (not our code).
 
-## Setup
+## Repository structure
+
+```
+draft_model/        core method (this repo's code)
+  run_draft.py         entry point: load -> clients -> bilevel AL -> server -> eval
+  bilevel_al.py        bilevel Augmented-Lagrangian solver (inner theta, outer features)
+  minibatch_design.py  stratified minibatch B, synthetic D^s, Universum U
+  losses.py            loss functions (linear model, smooth TPR-gap EO surrogate)
+  server.py            aggregation, global training, metrics, threshold tuning
+  dp.py                DP variants: none / pre_server / post_server / both
+  notation.py           data structures
+pipeline/            dataset loaders (adult, credit, law, 2d example)
+scripts/             run_final.sh (final 5-seed runs) + sweep_*.sh (grid search)
+outputs/             result JSONs, figures, outputs/tables/ (T1-T5 CSVs)
+docs/                guides, reports, paper tables (index below)
+verify.py            verification harness (see Reproducibility)
+build_tables.py       regenerate outputs/tables/T1-T5 + docs/PAPER_TABLES.md
+plot_results.py       regenerate figures from outputs/draft_results_*.json
+CreditData/           credit .xls/.xlsx/.csv goes here — gitignored, not committed
+UCIAdultdataset/      adult.data / adult.test go here — gitignored, not committed
+FairSynData/          reference implementation (incl. bundled Law data) — gitignored
+```
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Raw datasets are **not committed** (gitignored — large, and easy to re-fetch). Either drop them
-in yourself or let the loaders fetch them automatically:
-- **Credit:** download "Default of Credit Card Clients" (UCI id 350) and drop the `.xls`/`.xlsx`/`.csv`
-  into `CreditData/` — the loader (`pipeline/load_credit.py`) auto-detects the file and header row.
-  If the folder is empty it falls back to `ucimlrepo` (needs `pip install ucimlrepo` + internet).
-- **Adult:** drop `adult.data` + `adult.test` into `UCIAdultdataset/`, or let
-  `pipeline/load_adult.py` fetch via `ucimlrepo` automatically if the folder is empty/missing.
+### Getting the data
 
-## Quick start
+- **Adult** (UCI id 2): download from
+  https://archive.ics.uci.edu/dataset/2/adult and place `adult.data` + `adult.test` in
+  `UCIAdultdataset/`. If the folder is empty, `pipeline/load_adult.py` fetches it
+  automatically via `ucimlrepo` (`pip install ucimlrepo`, needs internet).
+- **Default of Credit Card Clients** (UCI id 350): download from
+  https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients and place the
+  `.xls`/`.xlsx`/`.csv` in `CreditData/`. `pipeline/load_credit.py` auto-detects the file
+  and header row; same `ucimlrepo` fallback if the folder is empty.
+- **Law School**: bundled at `FairSynData/rawdata/law.csv` — no download needed.
+
+## Usage
 
 ```bash
-# 1) Smoke test (credit)
+# Smoke test (fast, tiny config)
 python -m draft_model.run_draft --data credit --sensitive sex \
   --num_clients 3 --rounds 3 --K_inner 30 --results_file draft_results_credit_smoke.json
 
-# 2) Recommended credit run (post-calibration)
-python -m draft_model.run_draft --data credit --sensitive sex \
-  --dp_enabled false --rho 0.05 --epsilon_EO 0.1 \
-  --add_intercept true --tune_threshold true \
-  --rounds 8 --K_inner 100 --num_clients 5 --results_file draft_results_credit.json
+# Single run, e.g. the Law School final config
+python -m draft_model.run_draft --data law --sensitive race \
+  --add_intercept true --tune_threshold true --dp_variant none \
+  --rho 0.1 --epsilon_EO 0.1 --num_clients 5 --rounds 8 --K_inner 100 \
+  --seed 1 --deterministic true --results_file draft_results_law_seed1.json
 
-# 3) Recommended adult run (raw accuracy; keep threshold untuned)
-python -m draft_model.run_draft --data adult --sensitive sex \
-  --dp_enabled false --rho 0.1 --epsilon_EO 0.1 \
-  --add_intercept true --tune_threshold false \
-  --rounds 8 --K_inner 100 --num_clients 5 --results_file draft_results_adult.json
+# Full final results: adult/credit/law, 5 seeds each, rebuilds tables + figures
+bash scripts/run_final.sh
 
-# 4) Regenerate figures from every outputs/draft_results_*.json
+# Regenerate figures / paper tables from whatever is in outputs/
 python plot_results.py
-
-# 5) Rebuild the paper tables (T1-T5) + docs/PAPER_TABLES.md
 python build_tables.py
-
-# 6) Verification harness: compile, smoke run, sklearn-baseline parity, adult
-#    regression, ablation sanity, determinism -- self-contained, no dependency
-#    on pre-existing outputs/*.json
-python verify.py
 ```
 
-## Key flags
+### Key flags
 
 | Flag | Purpose |
 |---|---|
-| `--data {dummy,adult,2d,credit}` | dataset |
+| `--data {dummy,adult,2d,credit,law}` | dataset |
 | `--sensitive {sex,race}` | sensitive attribute |
 | `--dp_variant {none,pre_server,post_server,both}` `--dp_sigma` | DP placement / strength |
 | `--rho` `--epsilon_EO` | fairness penalty / tolerance (trade-off knobs) |
 | `--partition {iid,dirichlet}` `--dirichlet_alpha` | client heterogeneity (non-IID) |
-| **`--add_intercept true`** | bias term — fixes calibration/accuracy on imbalanced data |
-| **`--tune_threshold true`** | validation-calibrated decision threshold (optimizes balanced accuracy) |
+| `--add_intercept true` | bias term — fixes calibration/accuracy on imbalanced data |
+| `--tune_threshold true` | validation-calibrated decision threshold (maximizes balanced accuracy) |
 | `--no_universum` / `--fairness_off` | ablations: drop Universum / zero the fairness penalty |
 | `--num_clients` `--rounds` `--K_inner` | federation / training budget |
-| `--seed` | reproducibility (same seed ⇒ identical output, verified) |
+| `--seed` `--deterministic` | reproducibility (same seed + deterministic=true -> bit-identical output) |
 
-Do not modify `draft_model/bilevel_al.py` or `draft_model/losses.py` math without discussion —
-everything above is exposed as a flag precisely so experiments don't need to touch the method.
+`draft_model/bilevel_al.py` and `draft_model/losses.py` hold the method math — everything
+above is exposed as a flag precisely so experiments don't need to touch those files.
 
----
+## Results
 
-## Results (calibrated, 5-seed mean ± std — see `docs/PAPER_TABLES.md` for T1–T5)
+Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
+`docs/RESULTS.md` for exact CLI flags and full discussion; T1-T5 tables in
+`docs/PAPER_TABLES.md`).
 
-| Dataset | Sensitive attr | Baseline acc / EO | Pipeline acc / EO | Read |
+**Performance (mean ± std, 5 seeds)**
+
+| Dataset | Model | Accuracy | F1 | Balanced acc. | PR-AUC |
+|---|---|---|---|---|---|
+| Credit | baseline | 0.7594 ± 0.0202 | 0.4958 ± 0.0041 | 0.6049 ± 0.0012 | 0.4946 ± 0.0011 |
+| Credit | pipeline | 0.7372 ± 0.0229 | 0.4520 ± 0.0153 | 0.6159 ± 0.0095 | 0.4410 ± 0.0141 |
+| Adult  | baseline | 0.8452 ± 0.0002 | 0.6528 ± 0.0006 | 0.7660 ± 0.0004 | 0.7410 ± 0.0005 |
+| Adult  | pipeline | 0.6962 ± 0.0084 | 0.5599 ± 0.0086 | 0.7383 ± 0.0085 | 0.5613 ± 0.0088 |
+| Law    | baseline | 0.7786 ± 0.0144 | 0.8611 ± 0.0108 | 0.6150 ± 0.0039 | 0.9794 ± 0.0001 |
+| Law    | pipeline | 0.6999 ± 0.0191 | 0.8057 ± 0.0174 | 0.6508 ± 0.0393 | 0.9578 ± 0.0112 |
+
+**Fairness (mean ± std, 5 seeds)**
+
+| Dataset | Model | DP gap | EO gap | EOD gap |
 |---|---|---|---|---|
-| Default of Credit Card Clients | sex | 0.759 / 0.054 | 0.737 / 0.068 | pipeline ≈ baseline; baseline is already fair |
-| UCI Adult (reference) | sex | 0.852 / 0.084 | 0.699 / 0.086 | cuts demographic-parity gap, EO flat, real accuracy cost |
-| German Credit | foreign worker | 0.700 / 0.174 | 0.615 / 0.299 | EO **worsened** — data-limitation, see caveats |
+| Credit | baseline | 0.0235 ± 0.0016 | 0.0537 ± 0.0185 | 0.0279 ± 0.0027 |
+| Credit | pipeline | 0.1246 ± 0.0352 | 0.0675 ± 0.0128 | 0.1264 ± 0.0369 |
+| Adult  | baseline | 0.1420 ± 0.0014 | 0.0189 ± 0.0025 | 0.0526 ± 0.0014 |
+| Adult  | pipeline | 0.1351 ± 0.0586 | 0.0687 ± 0.0459 | 0.1116 ± 0.0309 |
+| Law    | baseline | 0.1908 ± 0.0053 | 0.3808 ± 0.0057 | 0.4001 ± 0.0166 |
+| Law    | pipeline | 0.2430 ± 0.0713 | 0.2624 ± 0.0769 | 0.2324 ± 0.0934 |
 
-**Honest picture, not just the win:**
-- Adding an intercept term was the single biggest fix — it recovered credit accuracy from
-  ~58–68% to ~77–85%. Without it the linear model over-predicts the minority class on
-  imbalanced data (see `docs/RESULTS.md`).
-- Once the baseline is properly calibrated, its EO gap is often already small — the method's
-  earlier "dramatic fairness win" was largely fixing a broken baseline, not beating a fair one.
-- **Ablations confirm the mechanism:** removing the Universum pseudo-positives clearly worsens
-  EO gap on both datasets (credit 0.00→0.05, adult 0.03→0.16) — Universum is the real fairness
-  driver. Zeroing the ρ penalty (`--fairness_off`) barely moves EO, because Universum's
-  S-balanced construction is independent of ρ.
-- German Credit's "foreign worker" sensitive attribute splits data 96%/4%; the minority group
-  has too few samples to reliably estimate group TPR — a data limitation, not a method bug.
-- **Known crash:** `--dirichlet_alpha 0.1` (extreme non-IID skew) can starve a client of all
-  data and crash `minibatch_design.py`/`bilevel_al.py`. Not patched (core-method files);
-  tracked as a documented limitation in `docs/PAPER_TABLES.md` (T4).
+**Headline:** on Credit and Adult, the calibrated baseline is already close to fair, so
+the method mainly trades accuracy for little fairness gain. **Law** — the reference
+paper's own dataset, and the most direct comparison point — is where the fairness
+intervention shows its clearest effect: the baseline is genuinely unfair (EO 0.381) and
+the pipeline cuts that by ~31% (to 0.262) and EOD by ~42% (0.400 → 0.232) at a real but
+moderate accuracy cost. Ablations confirm the **Universum construction is the active
+fairness mechanism** (removing it clearly worsens EO on both Credit and Adult). Full
+verdict, caveats, and known limitations: `docs/RESULTS.md`.
 
-Full tables, sweep grid, and per-config numbers: `docs/PAPER_TABLES.md`, `outputs/tables/*.csv`.
-Figures: `outputs/results_pareto.png`, `results_bars.png`, `results_convergence.png`.
+*A secondary German Credit experiment (different sensitive attribute, single seed, run
+by a separate contributor) is not part of the final 3-dataset pipeline above — see
+`docs/PROJECT_STATUS.md` for that result and why it's reported separately.*
 
-## Next steps
+## Reproducibility
 
-1. Close the accuracy gap (Adult pipeline ~70% vs baseline ~85%) with a small MLP in
-   `draft_model/losses.py` — the linear model is the main structural cap (see
-   `docs/ENHANCEMENT_GUIDE.md`).
-2. Add a minimum-group-size guard to the client partitioner so extreme Dirichlet skew degrades
-   gracefully instead of crashing.
-3. Re-run German Credit with a better-balanced sensitive attribute (e.g. binary age).
-4. Extend 5-seed reporting to ≥10 seeds for the final paper numbers (EO gap is noisy: Adult
-   std ≈ 0.057 at 5 seeds).
-
----
-
-## Repository layout
-
+```bash
+python verify.py
 ```
-draft_model/        core method
-  run_draft.py        main entry point (loads data -> clients -> bilevel -> server -> eval)
-  bilevel_al.py       bilevel Augmented-Lagrangian solver (inner theta + outer feature update)
-  minibatch_design.py stratified minibatch B, synthetic D^s, Universum U
-  losses.py           loss functions (linear model, smooth TPR-gap EO surrogate)
-  server.py           aggregation, global training, metrics (incl. extended + threshold tuning)
-  dp.py               DP variants: none / pre_server / post_server / both
-  notation.py         data structures
-pipeline/           dataset loaders (load_adult.py, load_credit.py, load_2d.py)
-CreditData/         credit dataset file goes here (.xls/.xlsx/.csv) — gitignored, not committed
-UCIAdultdataset/    Adult raw files — gitignored, not committed (loader auto-fetches if empty)
-FairSynData/         reference-paper implementation (Law/Dutch) — gitignored, teammate's code
-outputs/            result JSONs + figures + tables/ ; outputs/archive/ = superseded runs (gitignored)
-figures/            polished result figures
-docs/               guides & reports (index below), paper PDF, project questions
-scripts/            reproduction sweep scripts (sweep_*.sh)
-archive/            superseded/legacy scripts kept for local reference (gitignored)
-logs/               runtime logs — gitignored, not committed
-plot_results.py     regenerate figures from outputs/draft_results_*.json
-build_tables.py     regenerate paper tables (T1-T5) from outputs/*.json
-verify.py           verification harness (compile, smoke run, baseline-vs-sklearn, adult regression, ablation sanity, determinism)
-VSCODE_AGENT_BRIEF.md  hand-off brief for the VS Code agent (rename to CLAUDE.md to auto-load)
-```
+
+Runs 6 self-contained checks with no dependency on pre-existing `outputs/*.json`:
+compiles cleanly, a smoke run finishes with no NaNs, the baseline matches
+`sklearn.LogisticRegression` on the same features (±2%), the Adult default-flags run
+matches its known regression numbers, the `--no_universum` ablation measurably worsens
+the EO gap, and — critically — **running the identical command twice with the same
+`--seed` produces bit-identical output**. That determinism holds because `run_draft.py`
+pins single-threaded BLAS/OpenMP (env vars set before numpy/torch import), seeds
+`random`/`numpy`/`torch`, and every RNG consumer in the pipeline (including
+`draft_model/dp.py`'s DP noise, which previously drew from an unseeded generator) is
+threaded through the same seeded `numpy.random.Generator`.
 
 ## Documentation index (`docs/`)
 
 | File | What it's for |
 |---|---|
-| `docs/PROJECT_STATUS.md` | Current status summary across all three datasets (start here). |
-| `docs/RESULTS.md` | Calibrated results, verdict, and caveats. |
-| `docs/PAPER_TABLES.md` | The five paper tables (T1–T5) with the final numbers. |
-| `docs/ALL_IN_ONE_GUIDE.md` | One-stop: strategy, results, run commands for both scenarios. |
-| `docs/CREDIT_RISK_RUNBOOK.md` | Credit Risk: datasets, scenarios, why each method is preferred. |
+| `docs/RESULTS.md` | Final calibrated 5-seed results (Adult/Credit/Law), verdict, and caveats. |
+| `docs/PAPER_TABLES.md` | The five paper tables (T1-T5) with per-config numbers. |
+| `docs/PROJECT_STATUS.md` | Status snapshot across datasets, including the secondary German Credit run. |
+| `docs/ALL_IN_ONE_GUIDE.md` | One-stop: strategy, results, run commands. |
+| `docs/CREDIT_RISK_RUNBOOK.md` | Credit Risk: datasets, scenarios, method rationale. |
 | `docs/ENHANCEMENT_GUIDE.md` | How to raise accuracy: levers, constants, the MLP upgrade path. |
-| `docs/CHANGES.md` | What changed vs the previous repo state, and how to verify the code. |
-| `docs/STATUS_REPORT.md` | Short status summary (for the professor). |
-| `docs/PROJECT_GUIDE.md`, `docs/WORKFLOW.md` | Original method walkthrough + architecture. |
+| `docs/CHANGES.md` | Changelog against earlier repo states. |
+| `docs/STATUS_REPORT.md` | Dated single-seed milestone report (historical). |
+| `docs/PROJECT_GUIDE.md`, `docs/WORKFLOW.md` | Method walkthrough + architecture reference. |

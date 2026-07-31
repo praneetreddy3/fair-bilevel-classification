@@ -1,12 +1,16 @@
 # Fair Collaborative Classification - Bilevel Fairness Pipeline
-numpy>=1.20.0
-torch>=1.9.0
-pandas>=1.3.0
-scikit-learn>=0.24.0
-matplotlib>=3.4.0
+# Versions pinned to the environment verify.py's 6/6 checks pass on.
+numpy==1.26.4
+torch==2.9.0
+pandas==2.3.3
+scikit-learn==1.7.2
+matplotlib==3.9.2
 
-# Required for --data adult (UCI Adult dataset loader)
+# Required for --data credit when the file is .xls (old format)
+xlrd==2.0.2
+# Required for --data credit when the file is .xlsx
+openpyxl==3.1.2
+
+# Optional fallback for --data adult / --data credit when the raw file isn't present
+# locally (see README "Getting the data") -- not required if you download the data.
 ucimlrepo>=0.0.3
-
-# Required for --data credit (reads the .xls in CreditData/)
-xlrd>=2.0.1

@@ -5,6 +5,13 @@ Evaluates both a baseline (ERM) and the fairness-aware pipeline on the test set.
 Usage: python -m draft_model.run_draft --data {dummy,adult,2d} [options]
 """
 import os
+# Determinism: pin BLAS / OpenMP thread pools to a single thread BEFORE numpy or torch are
+# imported. Multi-threaded floating-point reduction order is the main source of CPU
+# non-determinism, and these env vars only take effect if set before the libraries load.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import sys
 import json
 import argparse
@@ -76,6 +83,12 @@ def load_credit_data(sensitive: str = "sex"):
     return prepare_credit_for_draft(sensitive=sensitive)
 
 
+def load_law_data(sensitive: str = "race"):
+    """Load the Law School dataset (reference paper's own dataset). Sensitive = race."""
+    from pipeline.load_law import prepare_law_for_draft
+    return prepare_law_for_draft(sensitive=sensitive)
+
+
 def dirichlet_partition_indices(Y: np.ndarray, num_clients: int, alpha: float, rng: np.random.Generator) -> list:
     """Label-skew non-IID client partition (standard FL recipe, e.g. Hsu et al. 2019).
 
@@ -96,8 +109,13 @@ def dirichlet_partition_indices(Y: np.ndarray, num_clients: int, alpha: float, r
 
 
 def main():
+    """End-to-end run: load data -> split train/val/test -> per-round client loop
+    (minibatch -> synthetic -> Universum -> bilevel AL) -> server aggregation (+ optional DP)
+    -> evaluate baseline (plain ERM) vs pipeline (fairness-constrained) on the test set ->
+    write results JSON to out_dir.
+    """
     parser = argparse.ArgumentParser(description="Run the fair bilevel pipeline.")
-    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit"])
+    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit", "law"])
     parser.add_argument("--sensitive", default="sex", choices=["sex", "race"])
     parser.add_argument("--num_clients", type=int, default=3)
     parser.add_argument("--partition", choices=["iid", "dirichlet"], default="iid",
@@ -138,7 +156,25 @@ def main():
     parser.add_argument("--dp_variant", choices=DP_VARIANTS, default="post_server")
     parser.add_argument("--stop_criterion", choices=["eo_gap", "grad_inf"], default="eo_gap")
     parser.add_argument("--outer_tol_xhat", type=float, default=1e-6)
+    parser.add_argument("--deterministic", type=str2bool, default=True,
+                         help="Pin single-thread + deterministic torch ops so identical seeds give "
+                              "identical results (fixes pipeline non-determinism). Set false for speed.")
     args = parser.parse_args()
+
+    # Reproducibility: seed every RNG and pin PyTorch's execution so the bilevel pipeline is
+    # bit-reproducible for a given --seed (baseline was already deterministic; the outer
+    # feature-update loop was not, due to multi-threaded float reduction order).
+    import random
+    import torch
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if args.deterministic:
+        torch.set_num_threads(1)
+        try:
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        except Exception:
+            pass
 
     out_dir = args.out_dir or os.path.join(PROJECT_ROOT, "outputs")
     os.makedirs(out_dir, exist_ok=True)
@@ -158,6 +194,8 @@ def main():
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_2d_data(PROJECT_ROOT)
     elif args.data == "credit":
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_credit_data(sensitive=args.sensitive)
+    elif args.data == "law":
+        (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_law_data(sensitive=args.sensitive)
     else:
         raise ValueError(args.data)
 
@@ -247,7 +285,9 @@ def main():
                 U_send = UniversumSet(X=X_u_new, A=U.A)
                 round_payloads.append(Payload(synthetic=Ds_send, universum=U_send))
             else:
-                theta_k = client_round_simplified(
+                # Simplified path only fits theta locally to sanity-check Ds/U construction;
+                # the fitted theta isn't sent anywhere (the server retrains from payloads).
+                client_round_simplified(
                     B, Ds, U, zeta,
                     lambda_theta_in=1e-4, lambda_U=0.5,
                     K_inner=args.K_inner, eta_theta=0.05,
@@ -256,7 +296,7 @@ def main():
 
         # Optional pre-server DP on payloads, then optional post-server DP in aggregation.
         payloads_for_server = apply_pre_server_dp(round_payloads, dp_cfg, rng=rng)
-        X_agg, A_agg, Y_agg = aggregate_payloads(payloads_for_server, dp_config=dp_cfg)
+        X_agg, A_agg, Y_agg = aggregate_payloads(payloads_for_server, dp_config=dp_cfg, rng=rng)
         if len(X_agg) == 0:
             theta_glob = zeta.copy()
         else:

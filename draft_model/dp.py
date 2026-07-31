@@ -38,6 +38,7 @@ class DPConfig:
 
 
 def resolve_dp_config(dp_enabled: bool, dp_sigma: float, dp_variant: str) -> DPConfig:
+    """Build a DPConfig from CLI args, forcing variant='none' when dp_enabled is False."""
     variant = str(dp_variant).strip().lower()
     if variant not in DP_VARIANTS:
         raise ValueError(f"Invalid dp_variant '{dp_variant}'. Expected one of {DP_VARIANTS}.")

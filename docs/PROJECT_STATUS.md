@@ -1,4 +1,4 @@
-# Project Status — Application I: Credit Risk (+ Adult reference)
+# Project Status — Application I: Credit Risk (+ Adult, Law reference)
 
 **Lead:** Praneet Chinthala · **Contributor:** Yanjia (German Credit)
 **Method:** fair bilevel federated classifier (synthetic + Universum + differential privacy).
@@ -6,11 +6,19 @@ Figure: `figures/combined_status.png`.
 
 ## Results so far
 
+Adult/Credit/Law numbers below are the current 5-seed final results from
+`scripts/run_final.sh` (see `docs/RESULTS.md` for full mean±std tables) — corrected after
+fixing an unseeded RNG in `draft_model/server.py`'s post-server DP noise, which previously
+made pipeline runs non-deterministic. The German Credit row is a separate, earlier
+single-seed run by a different contributor with a different sensitive attribute, not part
+of `scripts/run_final.sh`.
+
 | Dataset | Sensitive attr | Baseline acc / EO | Pipeline acc / EO | Read |
 |---|---|---|---|---|
 | Default of Credit Card Clients | sex | 0.759 / 0.054 | 0.737 / 0.068 | matches baseline; already-fair baseline |
-| UCI Adult (reference) | sex | 0.852 / 0.084 | 0.699 / 0.086 | cuts DP gap, EO flat, accuracy cost |
-| German Credit | foreign worker | 0.700 / 0.174 | 0.615 / 0.299 | EO **worsened**, accuracy dropped |
+| UCI Adult (reference) | sex | 0.845 / 0.019 | 0.696 / 0.069 | small fairness gain, real accuracy cost |
+| Law School (reference paper's own dataset) | race | 0.779 / 0.381 | 0.700 / 0.262 | clearest EO win (~31% reduction), moderate accuracy cost |
+| German Credit *(secondary, single seed)* | foreign worker | 0.700 / 0.174 | 0.615 / 0.299 | EO **worsened**, accuracy dropped |
 
 ## Key findings
 

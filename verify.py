@@ -107,7 +107,7 @@ def _prep_like_run_draft(X_train, A_train, Y_train, X_test, A_test, Y_test, seed
     n_val = int(n * val_frac)
     idx = np.arange(n)
     rng.shuffle(idx)
-    val_idx, train_idx = idx[:n_val], idx[n_val:]
+    train_idx = idx[n_val:]  # first n_val indices are the (unused here) validation split
     X_tr, A_tr, Y_tr = X_train[train_idx], A_train[train_idx], Y_train[train_idx]
 
     from sklearn.preprocessing import StandardScaler

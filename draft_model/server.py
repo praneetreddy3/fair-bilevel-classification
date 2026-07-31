@@ -8,11 +8,11 @@ import torch
 from typing import Optional
 from sklearn.metrics import average_precision_score, balanced_accuracy_score, f1_score, roc_auc_score
 from .losses import pack_xa
-from .notation import Payload
 from .dp import DPConfig, apply_post_server_dp
 
 
-def aggregate_payloads(payloads: list, dp_config: Optional[DPConfig] = None) -> tuple:
+def aggregate_payloads(payloads: list, dp_config: Optional[DPConfig] = None,
+                        rng: Optional[np.random.Generator] = None) -> tuple:
     """
     Concatenate all client payloads into (X, A, Y). Universum points get y=1.
 
@@ -34,7 +34,7 @@ def aggregate_payloads(payloads: list, dp_config: Optional[DPConfig] = None) -> 
     A_agg = np.concatenate(A_list)
     Y_agg = np.concatenate(Y_list)
     if dp_config is not None and len(X_agg) > 0:
-        X_agg = apply_post_server_dp(X_agg, dp_config)
+        X_agg = apply_post_server_dp(X_agg, dp_config, rng=rng)
     return X_agg, A_agg, Y_agg
 
 
@@ -72,6 +72,7 @@ def train_global_ridge_erm(
 
 
 def compute_f1_score(pred: np.ndarray, Y: np.ndarray) -> float:
+    """Binary F1 score from precision/recall on the positive (y=1) class."""
     tp = np.sum((pred == 1) & (Y == 1))
     fp = np.sum((pred == 1) & (Y == 0))
     fn = np.sum((pred == 0) & (Y == 1))

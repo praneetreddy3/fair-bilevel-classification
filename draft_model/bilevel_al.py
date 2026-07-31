@@ -14,13 +14,17 @@ from .losses import L_out, g_EO
 
 
 def _hessian_vector_product(loss, theta, v):
-    """Compute Hv where H = ∇²_θθ(loss)."""
+    """Compute Hv where H = ∇²_θθ(loss), via the Pearlmutter trick (two backward passes
+    instead of ever materializing H): first get grad_theta = ∇_θ loss with create_graph=True,
+    then differentiate the scalar (grad_theta · v) w.r.t. theta again to get Hv.
+    """
     grad_theta = torch.autograd.grad(loss, theta, create_graph=True, retain_graph=True)[0]
     return torch.autograd.grad((grad_theta * v).sum(), theta, retain_graph=True)[0]
 
 
 def _cg_solve(Hvp_fn, b, niter=10, tol=1e-6):
-    """Solve Hh = b via conjugate gradient."""
+    """Solve Hh = b via conjugate gradient, using Hvp_fn(x) -> Hx instead of forming H
+    explicitly (H is the inner-loss Hessian at theta*; see _hessian_vector_product)."""
     h = torch.zeros_like(b)
     r = b - Hvp_fn(h)
     p = r.clone()
@@ -111,8 +115,27 @@ def client_round_al(
     outer_tol_xhat: float = 1e-6,
 ):
     """
-    Full bilevel AL solver for one client round.
-    Returns (θ*, optimized_Ds_features, optimized_U_features).
+    Full bilevel AL solver for one client round (Algorithm 1).
+
+    Outer loop (J_outer iters): inner-optimize theta on Ds ∪ U (K_inner Adam steps), then
+    take an implicit-differentiation step on the synthetic/Universum features to reduce the
+    EO-gap-augmented outer objective Phi = L_out(theta*) + lam*g + (rho/2)*g^2, where theta*
+    is treated as an implicit function of those features (via the inner optimality condition).
+    The Lagrange multiplier `lam` and its EMA-smoothed fairness signal `g_ema` are updated
+    each outer iteration; the loop stops early once the EO gap (or the outer feature-gradient
+    norm, depending on `stop_criterion`) is within tolerance.
+
+    Args:
+        B: real client minibatch (fairness is evaluated against this).
+        Ds: synthetic minibatch with fixed (a, y) labels and learnable features.
+        U: Universum pseudo-positive set (also feature-learnable).
+        zeta: global model broadcast from the server (inner-loop regularization anchor).
+        rho, epsilon_EO: fairness penalty strength / EO-gap tolerance for early stopping.
+        K_inner, J_outer: inner Adam steps per outer iteration / max outer iterations.
+
+    Returns:
+        (theta_star, updated Ds features, updated U features) as numpy arrays — the payload
+        the client sends to the server (never the raw data B).
     """
     if device is None:
         device = torch.device("cpu")
@@ -186,7 +209,9 @@ def client_round_al(
         Lout_val = L_out(theta_star, B.X, B.A, B.Y,
                          torch.zeros_like(zeta_t), lambda_theta_out, d_plus_1)
 
-        # Compute ∇_θ Φ
+        # Compute ∇_θ Φ where Φ = L_out(θ) + λ·g(θ) + (ρ/2)·g(θ)²  (augmented Lagrangian).
+        # By the chain rule, ∇_θΦ = ∇_θL_out + λ·∇_θg + ρ·g·∇_θg — accumulate each term's
+        # gradient into `v` via separate backward passes (clearing .grad between them).
         theta_star.retain_grad()
         Lout_val.backward(retain_graph=True)
         v = theta_star.grad.clone()
@@ -195,7 +220,8 @@ def client_round_al(
         v = v + lam * theta_star.grad + rho * g_val.detach() * theta_star.grad
         theta_star.grad = None
 
-        # Solve h = H⁻¹v via CG
+        # Solve h = H⁻¹v via CG (H = ∇²_θθ Lin at theta*): h is the implicit-differentiation
+        # direction used below to propagate ∇_θΦ back onto the Ds/U features.
         def Hvp(h):
             Xa_ds = torch.cat([X_ds, torch.tensor(Ds.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
             Xa_u = torch.cat([X_u, torch.tensor(U.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
@@ -217,6 +243,11 @@ def client_round_al(
         if n_u > 0 and Ds.Delta_s > 0:
             Lin_for_x = Lin_for_x + lambda_U * torch.log(1+torch.exp(-(Xa_u@theta_star).squeeze(-1).clamp(min=-50))).mean()
 
+        # Implicit function theorem: d(theta*)/d(x) = -H^-1 * d/dx(∇_θ Lin), so the hypergradient
+        # of Phi w.r.t. the features is -(∇_x ∇_θ Lin) @ h. Rather than forming the
+        # (features x theta) Jacobian, use the vector-Jacobian trick: differentiate the scalar
+        # w = (∇_θ Lin) . h w.r.t. X_ds/X_u directly (grad_theta_lin kept differentiable via
+        # create_graph=True above) to get the same product in one backward pass each.
         grad_theta_lin = torch.autograd.grad(Lin_for_x, theta_star, create_graph=True, retain_graph=True)[0]
         w = (grad_theta_lin * h).sum()
         grad_X_ds = torch.autograd.grad(w, X_ds, allow_unused=True, retain_graph=True)[0]
