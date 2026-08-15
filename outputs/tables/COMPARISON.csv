@@ -1,0 +1,7 @@
+dataset,method,accuracy,EO_gap,status
+adult,our_method,0.6962 +/- 0.0084,0.0687 +/- 0.0459,done
+adult,reference_FairSynData,,,blocked
+credit,our_method,0.7372 +/- 0.0229,0.0675 +/- 0.0128,done
+credit,reference_FairSynData,,,blocked
+law,our_method,0.6999 +/- 0.0191,0.2624 +/- 0.0769,done
+law,reference_FairSynData,,,blocked
