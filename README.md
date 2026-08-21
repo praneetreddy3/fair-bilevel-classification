@@ -20,8 +20,9 @@ with:
   (see the ablations in `docs/PAPER_TABLES.md`, T5).
 - **Differential-privacy variants** (`draft_model/dp.py`) — none / pre-server /
   post-server / both, so the privacy-accuracy-fairness trade-off is a flag, not a rewrite.
-- **Non-IID client partitioning** (`--partition dirichlet`) and two additional
-  applications beyond Law: UCI Adult and the UCI "Default of Credit Card Clients" dataset.
+- **Non-IID client partitioning** (`--partition dirichlet`) and three additional
+  applications beyond Law: UCI Adult, the UCI "Default of Credit Card Clients" dataset,
+  and (secondary) UCI German Credit.
 
 `FairSynData/` is kept for reference and comparison but is gitignored (not our code).
 
@@ -36,15 +37,17 @@ draft_model/        core method (this repo's code)
   server.py            aggregation, global training, metrics, threshold tuning
   dp.py                DP variants: none / pre_server / post_server / both
   notation.py           data structures
-pipeline/            dataset loaders (adult, credit, law, 2d example)
-scripts/             run_final.sh (final 5-seed runs) + sweep_*.sh (grid search)
+pipeline/            dataset loaders (adult, credit, law, german, 2d example)
+scripts/             run_final.sh (final 5-seed runs, credit/adult/law) +
+                     run_german.sh (secondary 5-seed run) + sweep_*.sh (grid search)
 outputs/             result JSONs, figures, outputs/tables/ (T1-T5 CSVs)
 docs/                guides, reports, paper tables (index below)
 verify.py            verification harness (see Reproducibility)
 build_tables.py       regenerate outputs/tables/T1-T5 + docs/PAPER_TABLES.md
-plot_results.py       regenerate figures from outputs/draft_results_*.json
+plot_results.py       regenerate figures from the official final-seed runs (--all for every run)
 CreditData/           credit .xls/.xlsx/.csv goes here — gitignored, not committed
 UCIAdultdataset/      adult.data / adult.test go here — gitignored, not committed
+GermanData/           german.data goes here — gitignored, not committed
 FairSynData/          reference implementation (incl. bundled Law data) — gitignored
 ```
 
@@ -65,6 +68,10 @@ pip install -r requirements.txt
   `.xls`/`.xlsx`/`.csv` in `CreditData/`. `pipeline/load_credit.py` auto-detects the file
   and header row; same `ucimlrepo` fallback if the folder is empty.
 - **Law School**: bundled at `FairSynData/rawdata/law.csv` — no download needed.
+- **German Credit** *(secondary)* (UCI id 144): download from
+  https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data and place
+  `german.data` in `GermanData/`. `pipeline/load_german.py` auto-detects the file; same
+  `ucimlrepo` fallback if the folder is empty.
 
 ## Usage
 
@@ -79,10 +86,14 @@ python -m draft_model.run_draft --data law --sensitive race \
   --rho 0.1 --epsilon_EO 0.1 --num_clients 5 --rounds 8 --K_inner 100 \
   --seed 1 --deterministic true --results_file draft_results_law_seed1.json
 
-# Full final results: adult/credit/law, 5 seeds each, rebuilds tables + figures
+# Full final results: adult/credit/law, 5 seeds each
 bash scripts/run_final.sh
 
-# Regenerate figures / paper tables from whatever is in outputs/
+# Secondary: German Credit, 5 seeds (age as sensitive attribute — see docs/PROJECT_STATUS.md)
+bash scripts/run_german.sh
+
+# Regenerate figures (official final-seed runs; pass --all for every run in outputs/)
+# / paper tables (T1-T5, from outputs/draft_results_*.json)
 python plot_results.py
 python build_tables.py
 ```
@@ -91,8 +102,8 @@ python build_tables.py
 
 | Flag | Purpose |
 |---|---|
-| `--data {dummy,adult,2d,credit,law}` | dataset |
-| `--sensitive {sex,race}` | sensitive attribute |
+| `--data {dummy,adult,2d,credit,law,german}` | dataset |
+| `--sensitive {sex,race,age}` | sensitive attribute (age is German-only) |
 | `--dp_variant {none,pre_server,post_server,both}` `--dp_sigma` | DP placement / strength |
 | `--rho` `--epsilon_EO` | fairness penalty / tolerance (trade-off knobs) |
 | `--partition {iid,dirichlet}` `--dirichlet_alpha` | client heterogeneity (non-IID) |
@@ -107,9 +118,12 @@ above is exposed as a flag precisely so experiments don't need to touch those fi
 
 ## Results
 
-Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
-`docs/RESULTS.md` for exact CLI flags and full discussion; T1-T5 tables in
-`docs/PAPER_TABLES.md`).
+Final 5-seed runs (`scripts/run_final.sh` for Credit/Adult/Law, `scripts/run_german.sh`
+for German — per-dataset best settings; see `docs/RESULTS.md` for exact CLI flags and
+full discussion; T1-T5 tables in `docs/PAPER_TABLES.md`). German Credit is a secondary
+dataset (see `docs/PROJECT_STATUS.md`) — kept out of `scripts/run_final.sh` and the T3-T5
+sweep/ablation/non-IID tables (never run for it), but included here and in T1/T2 and the
+figures since it's a full 5-seed result on its own.
 
 **Performance (mean ± std, 5 seeds)**
 
@@ -121,6 +135,8 @@ Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
 | Adult  | pipeline | 0.6962 ± 0.0084 | 0.5599 ± 0.0086 | 0.7383 ± 0.0085 | 0.5613 ± 0.0088 |
 | Law    | baseline | 0.7786 ± 0.0144 | 0.8611 ± 0.0108 | 0.6150 ± 0.0039 | 0.9794 ± 0.0001 |
 | Law    | pipeline | 0.6999 ± 0.0191 | 0.8057 ± 0.0174 | 0.6508 ± 0.0393 | 0.9578 ± 0.0112 |
+| German *(secondary)* | baseline | 0.7270 ± 0.0075 | 0.5916 ± 0.0163 | 0.7079 ± 0.0131 | 0.6023 ± 0.0165 |
+| German *(secondary)* | pipeline | 0.6420 ± 0.0326 | 0.5381 ± 0.0319 | 0.6567 ± 0.0301 | 0.5255 ± 0.0432 |
 
 **Fairness (mean ± std, 5 seeds)**
 
@@ -132,19 +148,22 @@ Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
 | Adult  | pipeline | 0.1351 ± 0.0586 | 0.0687 ± 0.0459 | 0.1116 ± 0.0309 |
 | Law    | baseline | 0.1908 ± 0.0053 | 0.3808 ± 0.0057 | 0.4001 ± 0.0166 |
 | Law    | pipeline | 0.2430 ± 0.0713 | 0.2624 ± 0.0769 | 0.2324 ± 0.0934 |
+| German *(secondary)* | baseline | 0.4482 ± 0.0232 | 0.4350 ± 0.0339 | 0.4350 ± 0.0339 |
+| German *(secondary)* | pipeline | 0.2022 ± 0.0840 | 0.0750 ± 0.0689 | 0.1821 ± 0.1104 |
 
 **Headline:** on Credit and Adult, the calibrated baseline is already close to fair, so
-the method mainly trades accuracy for little fairness gain. **Law** — the reference
-paper's own dataset, and the most direct comparison point — is where the fairness
-intervention shows its clearest effect: the baseline is genuinely unfair (EO 0.381) and
-the pipeline cuts that by ~31% (to 0.262) and EOD by ~42% (0.400 → 0.232) at a real but
-moderate accuracy cost. Ablations confirm the **Universum construction is the active
+the method mainly trades accuracy for little fairness gain. **Law** and **German** are
+where the fairness intervention shows its clearest effect: both baselines are genuinely
+unfair (Law EO 0.381, German EO 0.435), and the pipeline cuts that by ~31% (Law, to
+0.262) and **~83% (German, to 0.075 — the largest reduction of any dataset)** at a real
+but moderate accuracy cost. Ablations confirm the **Universum construction is the active
 fairness mechanism** (removing it clearly worsens EO on both Credit and Adult). Full
 verdict, caveats, and known limitations: `docs/RESULTS.md`.
 
-*A secondary German Credit experiment (different sensitive attribute, single seed, run
-by a separate contributor) is not part of the final 3-dataset pipeline above — see
-`docs/PROJECT_STATUS.md` for that result and why it's reported separately.*
+*German Credit uses **age** as the sensitive attribute (balanced ~52/48 split) rather
+than the original **foreign worker** attribute (96/4 split, unstable single-seed result)
+from an earlier contributor's run — see `docs/PROJECT_STATUS.md` for that comparison and
+why the fix works.*
 
 ## Reproducibility
 

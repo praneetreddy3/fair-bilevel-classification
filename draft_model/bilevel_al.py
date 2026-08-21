@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from .notation import OriginalMinibatch, SyntheticMinibatch, UniversumSet
 from .losses import L_out, g_EO
+from .model import ModelConfig, score as model_score
 
 
 def _hessian_vector_product(loss, theta, v):
@@ -113,6 +114,7 @@ def client_round_al(
     w_clip: float = 10.0,
     stop_criterion: str = "eo_gap",
     outer_tol_xhat: float = 1e-6,
+    model_cfg: ModelConfig = None,
 ):
     """
     Full bilevel AL solver for one client round (Algorithm 1).
@@ -132,6 +134,8 @@ def client_round_al(
         zeta: global model broadcast from the server (inner-loop regularization anchor).
         rho, epsilon_EO: fairness penalty strength / EO-gap tolerance for early stopping.
         K_inner, J_outer: inner Adam steps per outer iteration / max outer iterations.
+        model_cfg: ModelConfig selecting linear (default) or MLP scoring; see model.py.
+            zeta must already be shaped for this cfg (see model.init_params).
 
     Returns:
         (theta_star, updated Ds features, updated U features) as numpy arrays — the payload
@@ -139,8 +143,12 @@ def client_round_al(
     """
     if device is None:
         device = torch.device("cpu")
+    model_cfg = model_cfg or ModelConfig()
     d = B.X.shape[1]
-    d_plus_1 = d + 1
+    d_plus_1 = model_cfg.param_count(d)  # reg-strength normalizer; equals d+1 for linear
+
+    def _score(th, Xa_):
+        return model_score(model_cfg, th, Xa_)
 
     n_u = U.size()
     X_ds = torch.tensor(Ds.X.copy(), dtype=torch.float32, device=device, requires_grad=True)
@@ -167,15 +175,15 @@ def client_round_al(
             Xa_u = torch.cat([X_u.detach(), A_u], dim=1)
             y_ds = torch.tensor(Ds.Y, dtype=torch.float32, device=device)
 
-            logits_ds = (Xa_ds @ theta)
-            margin_ds = (2 * y_ds - 1) * logits_ds.squeeze(-1)
+            logits_ds = _score(theta, Xa_ds)
+            margin_ds = (2 * y_ds - 1) * logits_ds
             loss_per = torch.log(1 + torch.exp(-margin_ds.clamp(min=-50)))
             loss_ds = (loss_per * ds_weights_t).sum() / (ds_weights_t.sum() + 1e-12)
             reg_in = (lambda_theta_in / (2 * (d_plus_1 ** 2))) * ((theta - zeta_t) ** 2).sum()
             Lin_inner = loss_ds + reg_in
 
             if n_u > 0 and Ds.Delta_s > 0:
-                logits_u = (Xa_u @ theta).squeeze(-1)
+                logits_u = _score(theta, Xa_u)
                 loss_u = torch.log(1 + torch.exp(-logits_u.clamp(min=-50))).mean()
                 Lin_inner = Lin_inner + lambda_U * loss_u
 
@@ -204,10 +212,11 @@ def client_round_al(
             theta_star, B_X_fair, B_A_fair, B_Y_fair,
             tau=tpr_tau if use_tpr_gap else 0.0,
             alpha=tpr_alpha if use_tpr_gap else 10.0,
+            cfg=model_cfg,
         )
         # Paper (Sec 3.1): L_out(θ) = L_{k,t}(θ; B_{k,t}, 0) — outer ridge is ||θ||², not ||θ-ζ||²
         Lout_val = L_out(theta_star, B.X, B.A, B.Y,
-                         torch.zeros_like(zeta_t), lambda_theta_out, d_plus_1)
+                         torch.zeros_like(zeta_t), lambda_theta_out, d_plus_1, cfg=model_cfg)
 
         # Compute ∇_θ Φ where Φ = L_out(θ) + λ·g(θ) + (ρ/2)·g(θ)²  (augmented Lagrangian).
         # By the chain rule, ∇_θΦ = ∇_θL_out + λ·∇_θg + ρ·g·∇_θg — accumulate each term's
@@ -225,11 +234,11 @@ def client_round_al(
         def Hvp(h):
             Xa_ds = torch.cat([X_ds, torch.tensor(Ds.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
             Xa_u = torch.cat([X_u, torch.tensor(U.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
-            loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*(Xa_ds@theta_star).squeeze(-1).clamp(min=-50))).mean()
+            loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*_score(theta_star, Xa_ds).clamp(min=-50))).mean()
             reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
             L = loss_ds + reg
             if n_u > 0 and Ds.Delta_s > 0:
-                L = L + lambda_U * torch.log(1+torch.exp(-(Xa_u@theta_star).squeeze(-1).clamp(min=-50))).mean()
+                L = L + lambda_U * torch.log(1+torch.exp(-_score(theta_star, Xa_u).clamp(min=-50))).mean()
             return _hessian_vector_product(L, theta_star, h)
 
         h = _cg_solve(Hvp, v.float(), niter=30, tol=1e-4)
@@ -237,11 +246,11 @@ def client_round_al(
         # Implicit gradient: update synthetic and Universum features
         Xa_ds = torch.cat([X_ds, torch.tensor(Ds.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
         Xa_u = torch.cat([X_u, torch.tensor(U.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
-        loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*(Xa_ds@theta_star).squeeze(-1).clamp(min=-50))).mean()
+        loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*_score(theta_star, Xa_ds).clamp(min=-50))).mean()
         reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
         Lin_for_x = loss_ds + reg
         if n_u > 0 and Ds.Delta_s > 0:
-            Lin_for_x = Lin_for_x + lambda_U * torch.log(1+torch.exp(-(Xa_u@theta_star).squeeze(-1).clamp(min=-50))).mean()
+            Lin_for_x = Lin_for_x + lambda_U * torch.log(1+torch.exp(-_score(theta_star, Xa_u).clamp(min=-50))).mean()
 
         # Implicit function theorem: d(theta*)/d(x) = -H^-1 * d/dx(∇_θ Lin), so the hypergradient
         # of Phi w.r.t. the features is -(∇_x ∇_θ Lin) @ h. Rather than forming the
@@ -298,12 +307,14 @@ def client_round_simplified(
     K_inner: int,
     eta_theta: float = 0.05,
     device=None,
+    model_cfg: ModelConfig = None,
 ):
     """Simplified path: inner-only θ optimization (no feature updates)."""
     if device is None:
         device = torch.device("cpu")
+    model_cfg = model_cfg or ModelConfig()
     d = B.X.shape[1]
-    d_plus_1 = d + 1
+    d_plus_1 = model_cfg.param_count(d)
     theta = torch.tensor(zeta, dtype=torch.float32, device=device, requires_grad=True)
     zeta_t = torch.tensor(zeta, dtype=torch.float32, device=device)
     opt = torch.optim.Adam([theta], lr=eta_theta)
@@ -312,7 +323,7 @@ def client_round_simplified(
     for _ in range(K_inner):
         opt.zero_grad()
         L = Lin(theta, Ds.X, Ds.A, Ds.Y, U.X, U.A,
-                zeta_t, lambda_theta_in, lambda_U, d_plus_1, Ds.Delta_s)
+                zeta_t, lambda_theta_in, lambda_U, d_plus_1, Ds.Delta_s, cfg=model_cfg)
         L.backward()
         opt.step()
 

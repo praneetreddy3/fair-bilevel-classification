@@ -32,6 +32,7 @@ from draft_model.server import (
     aggregate_payloads, train_global_ridge_erm, compute_eo_gap_and_accuracy,
     compute_extended_metrics, pick_threshold,
 )
+from draft_model.model import ModelConfig, init_params as init_model_params
 
 
 def str2bool(v):
@@ -89,6 +90,14 @@ def load_law_data(sensitive: str = "race"):
     return prepare_law_for_draft(sensitive=sensitive)
 
 
+def load_german_data(sensitive: str = "age"):
+    """Load UCI German Credit (id 144). Put the file in GermanData/. Sensitive = age
+    (balanced ~50/50 split; the foreign-worker attribute is too skewed, see
+    docs/PROJECT_STATUS.md)."""
+    from pipeline.load_german import prepare_german_for_draft
+    return prepare_german_for_draft(sensitive=sensitive)
+
+
 def dirichlet_partition_indices(Y: np.ndarray, num_clients: int, alpha: float, rng: np.random.Generator) -> list:
     """Label-skew non-IID client partition (standard FL recipe, e.g. Hsu et al. 2019).
 
@@ -115,8 +124,8 @@ def main():
     write results JSON to out_dir.
     """
     parser = argparse.ArgumentParser(description="Run the fair bilevel pipeline.")
-    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit", "law"])
-    parser.add_argument("--sensitive", default="sex", choices=["sex", "race"])
+    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit", "law", "german"])
+    parser.add_argument("--sensitive", default="sex", choices=["sex", "race", "age"])
     parser.add_argument("--num_clients", type=int, default=3)
     parser.add_argument("--partition", choices=["iid", "dirichlet"], default="iid",
                          help="Client data partition: iid (random shuffle) or dirichlet (label-skew non-IID)")
@@ -159,6 +168,12 @@ def main():
     parser.add_argument("--deterministic", type=str2bool, default=True,
                          help="Pin single-thread + deterministic torch ops so identical seeds give "
                               "identical results (fixes pipeline non-determinism). Set false for speed.")
+    parser.add_argument("--model", choices=["linear", "mlp"], default="linear",
+                         help="Scorer f(x,a): linear (default, matches all prior results) or a "
+                              "1-hidden-layer MLP. Applies to both baseline and pipeline for a "
+                              "fair accuracy comparison.")
+    parser.add_argument("--hidden_dim", type=int, default=8,
+                         help="Hidden units for --model mlp (ignored for linear).")
     args = parser.parse_args()
 
     # Reproducibility: seed every RNG and pin PyTorch's execution so the bilevel pipeline is
@@ -196,6 +211,8 @@ def main():
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_credit_data(sensitive=args.sensitive)
     elif args.data == "law":
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_law_data(sensitive=args.sensitive)
+    elif args.data == "german":
+        (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_german_data(sensitive=args.sensitive)
     else:
         raise ValueError(args.data)
 
@@ -225,8 +242,8 @@ def main():
         X_test = np.hstack([X_test, np.ones((len(X_test), 1))])
 
     d = X_train.shape[1]
-    d_plus_1 = d + 1
-    zeta = np.zeros(d_plus_1)
+    model_cfg = ModelConfig(model_type=args.model, hidden_dim=args.hidden_dim)
+    zeta = init_model_params(model_cfg, d, seed=args.seed)
 
     # Split data across clients
     if args.partition == "dirichlet":
@@ -275,6 +292,7 @@ def main():
                     use_rolling_buffer=args.use_rolling_buffer,
                     stop_criterion=args.stop_criterion,
                     outer_tol_xhat=args.outer_tol_xhat,
+                    model_cfg=model_cfg,
                 )
                 Ds_send = SyntheticMinibatch(
                     X=X_ds_new, A=Ds.A, Y=Ds.Y,
@@ -291,6 +309,7 @@ def main():
                     B, Ds, U, zeta,
                     lambda_theta_in=1e-4, lambda_U=0.5,
                     K_inner=args.K_inner, eta_theta=0.05,
+                    model_cfg=model_cfg,
                 )
                 round_payloads.append(Payload(synthetic=Ds, universum=U))
 
@@ -303,11 +322,12 @@ def main():
             theta_glob = train_global_ridge_erm(
                 X_agg, A_agg, Y_agg, zeta=zeta,
                 lambda_theta=1e-4, max_iter=500, lr=0.05,
+                model_cfg=model_cfg,
             )
         zeta = theta_glob.copy()
 
         eo_val, tpr0_val, tpr1_val, acc_val, f1_val = compute_eo_gap_and_accuracy(
-            theta_glob, X_val, A_val, Y_val
+            theta_glob, X_val, A_val, Y_val, model_cfg=model_cfg
         )
         round_logs.append({
             "round": t, "val_accuracy": acc_val, "val_EO_gap": eo_val,
@@ -315,23 +335,26 @@ def main():
         })
 
     # Final evaluation (optionally with a validation-calibrated decision threshold).
-    thr_pipe = pick_threshold(theta_glob, X_val, A_val, Y_val) if args.tune_threshold else 0.0
+    thr_pipe = pick_threshold(theta_glob, X_val, A_val, Y_val, model_cfg=model_cfg) if args.tune_threshold else 0.0
     eo_gap, tpr0, tpr1, acc, f1 = compute_eo_gap_and_accuracy(
-        theta_glob, X_test, A_test, Y_test, threshold=thr_pipe
+        theta_glob, X_test, A_test, Y_test, threshold=thr_pipe, model_cfg=model_cfg
     )
 
-    # Baseline comparison (its own calibrated threshold for a fair comparison).
+    # Baseline comparison (same model_cfg as pipeline, its own calibrated threshold —
+    # both apples-to-apples on model capacity so any accuracy gain reflects the fairness
+    # mechanism, not extra capacity given to only one side).
     theta_baseline = train_global_ridge_erm(
         X_train, A_train, Y_train,
-        zeta=np.zeros(d_plus_1), lambda_theta=1e-4, max_iter=500, lr=0.05,
+        zeta=init_model_params(model_cfg, d, seed=args.seed), lambda_theta=1e-4, max_iter=500, lr=0.05,
+        model_cfg=model_cfg,
     )
-    thr_base = pick_threshold(theta_baseline, X_val, A_val, Y_val) if args.tune_threshold else 0.0
+    thr_base = pick_threshold(theta_baseline, X_val, A_val, Y_val, model_cfg=model_cfg) if args.tune_threshold else 0.0
     eo_baseline, tpr0_b, tpr1_b, acc_baseline, f1_baseline = compute_eo_gap_and_accuracy(
-        theta_baseline, X_test, A_test, Y_test, threshold=thr_base
+        theta_baseline, X_test, A_test, Y_test, threshold=thr_base, model_cfg=model_cfg
     )
 
-    extended_pipeline = compute_extended_metrics(theta_glob, X_test, A_test, Y_test)
-    extended_baseline = compute_extended_metrics(theta_baseline, X_test, A_test, Y_test)
+    extended_pipeline = compute_extended_metrics(theta_glob, X_test, A_test, Y_test, model_cfg=model_cfg)
+    extended_baseline = compute_extended_metrics(theta_baseline, X_test, A_test, Y_test, model_cfg=model_cfg)
 
     results = {
         "baseline": {
@@ -343,6 +366,7 @@ def main():
             "accuracy": acc, "F1_score": f1, "EO_gap": eo_gap,
             "TPR_group0": tpr0, "TPR_group1": tpr1,
             "num_clients": args.num_clients, "rounds": args.rounds,
+            "model": args.model, "hidden_dim": args.hidden_dim,
             "use_tpr_gap": args.use_tpr_gap,
             "tpr_alpha": args.tpr_alpha,
             "tpr_tau": args.tpr_tau,

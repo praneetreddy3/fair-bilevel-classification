@@ -1,15 +1,18 @@
 """
 Reusable results plotter.
 
-Scans outputs/draft_results_*.json (whatever configs you've run) and regenerates:
+Scans outputs/draft_results_*_final_seed*.json (the official 5-seed final runs — credit/
+adult/law via scripts/run_final.sh, german via scripts/run_german.sh) and regenerates:
   - outputs/results_pareto.png      accuracy vs EO gap, baseline as a star, best = top-left
   - outputs/results_bars.png        baseline vs pipeline accuracy & EO gap per config
   - outputs/results_convergence.png val accuracy / EO gap per round (if round_logs present)
 
 Run after any re-run:   python plot_results.py
-No hardcoded experiment pairs — it just plots whatever JSONs are in outputs/.
+Pass --all to instead plot every draft_results_*.json in outputs/ (sweeps, ablations,
+dirichlet, etc. included) for ad-hoc exploration -- this is unfiltered and gets crowded
+fast (~70+ points across the historical sweep files), so it's opt-in, not the default.
 """
-import os, glob, json
+import os, glob, json, argparse
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -24,9 +27,9 @@ def _label(path: str) -> str:
     return b if b else "run"
 
 
-def load_runs():
+def load_runs(pattern: str = "draft_results_*_final_seed*.json"):
     runs = []
-    for p in sorted(glob.glob(os.path.join(OUT, "draft_results_*.json"))):
+    for p in sorted(glob.glob(os.path.join(OUT, pattern))):
         try:
             with open(p) as f:
                 d = json.load(f)
@@ -114,10 +117,17 @@ def plot_convergence(runs):
 
 
 if __name__ == "__main__":
-    runs = load_runs()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--all", action="store_true",
+                         help="Plot every draft_results_*.json (sweeps/ablations included), "
+                              "not just the official final-seed runs.")
+    args = parser.parse_args()
+
+    pattern = "draft_results_*.json" if args.all else "draft_results_*_final_seed*.json"
+    runs = load_runs(pattern)
     if not runs:
-        print(f"No draft_results_*.json found in {OUT}. Run the pipeline first.")
+        print(f"No matching draft_results_*.json found in {OUT}. Run the pipeline first.")
     else:
         plot_pareto(runs); plot_bars(runs); plot_convergence(runs)
-        print(f"Plotted {len(runs)} run(s). Figures saved in {OUT}/:")
+        print(f"Plotted {len(runs)} run(s) (pattern={pattern!r}). Figures saved in {OUT}/:")
         print("  results_pareto.png, results_bars.png, results_convergence.png")

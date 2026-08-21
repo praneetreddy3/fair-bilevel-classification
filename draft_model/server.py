@@ -9,6 +9,21 @@ from typing import Optional
 from sklearn.metrics import average_precision_score, balanced_accuracy_score, f1_score, roc_auc_score
 from .losses import pack_xa
 from .dp import DPConfig, apply_post_server_dp
+from .model import ModelConfig, score as model_score
+
+
+def _logits_np(theta: np.ndarray, Xa: np.ndarray, cfg: ModelConfig) -> np.ndarray:
+    """Numpy logits for eval-only call sites (no grad needed).
+
+    Linear case stays pure-numpy float64 (byte-identical to the original `Xa @ theta`) —
+    routing it through torch would downcast to float32 and shift PR-AUC/ROC-AUC (rank-
+    sensitive to tiny precision differences) even though threshold-based metrics don't
+    move. Only the MLP path (no prior numpy behavior to preserve) goes through torch.
+    """
+    if cfg.model_type == "linear":
+        return Xa @ theta
+    with torch.no_grad():
+        return model_score(cfg, theta, Xa).cpu().numpy()
 
 
 def aggregate_payloads(payloads: list, dp_config: Optional[DPConfig] = None,
@@ -45,6 +60,7 @@ def train_global_ridge_erm(
     max_iter: int = 200,
     lr: float = 0.05,
     device=None,
+    model_cfg: ModelConfig = None,
 ) -> np.ndarray:
     """Train global classifier: regularized logistic loss → θ^glob."""
     if device is None:
@@ -52,7 +68,8 @@ def train_global_ridge_erm(
     if len(X) == 0:
         return zeta.copy()
 
-    d_plus_1 = X.shape[1] + 1
+    model_cfg = model_cfg or ModelConfig()
+    d_plus_1 = model_cfg.param_count(X.shape[1])  # reg-strength normalizer
     theta = torch.tensor(zeta, dtype=torch.float32, device=device, requires_grad=True)
     zeta_t = torch.tensor(zeta, dtype=torch.float32, device=device)
     opt = torch.optim.Adam([theta], lr=lr)
@@ -61,7 +78,7 @@ def train_global_ridge_erm(
 
     for _ in range(max_iter):
         opt.zero_grad()
-        logits = (Xa @ theta).squeeze(-1)
+        logits = model_score(model_cfg, theta, Xa)
         margin = (2 * y - 1) * logits
         loss_data = torch.log(1 + torch.exp(-margin.clamp(min=-50))).mean()
         reg = (lambda_theta / (2 * (d_plus_1 ** 2))) * ((theta - zeta_t) ** 2).sum()
@@ -82,7 +99,7 @@ def compute_f1_score(pred: np.ndarray, Y: np.ndarray) -> float:
 
 
 def compute_eo_gap_and_accuracy(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
-                                threshold: float = 0.0) -> tuple:
+                                threshold: float = 0.0, model_cfg: ModelConfig = None) -> tuple:
     """Evaluate: EO gap = |TPR₁ − TPR₀|, accuracy, and F1.
 
     ``threshold`` is the decision cutoff on the logit (default 0.0 = original
@@ -90,7 +107,7 @@ def compute_eo_gap_and_accuracy(theta: np.ndarray, X: np.ndarray, A: np.ndarray,
     imbalanced data (e.g. credit), which recovers accuracy without changing the model.
     """
     Xa = np.hstack([X, A.reshape(-1, 1)])
-    logits = Xa @ theta
+    logits = _logits_np(theta, Xa, model_cfg or ModelConfig())
     pred = (logits > threshold).astype(np.float64)
     acc = np.mean(pred == Y)
     f1 = compute_f1_score(pred, Y)
@@ -107,7 +124,7 @@ def compute_eo_gap_and_accuracy(theta: np.ndarray, X: np.ndarray, A: np.ndarray,
 
 
 def pick_threshold(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
-                   metric: str = "balanced") -> float:
+                   metric: str = "balanced", model_cfg: ModelConfig = None) -> float:
     """Choose the logit decision threshold that maximises balanced accuracy on (X,A,Y).
 
     Balanced accuracy = 0.5*(TPR + TNR), robust to class imbalance. Scans candidate
@@ -115,7 +132,7 @@ def pick_threshold(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarra
     split and then passed to ``compute_eo_gap_and_accuracy`` for the test set.
     """
     Xa = np.hstack([X, A.reshape(-1, 1)])
-    logits = Xa @ theta
+    logits = _logits_np(theta, Xa, model_cfg or ModelConfig())
     if len(np.unique(Y)) < 2:
         return 0.0
     candidates = np.quantile(logits, np.linspace(0.02, 0.98, 49))
@@ -132,12 +149,13 @@ def pick_threshold(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarra
     return best_t
 
 
-def compute_extended_metrics(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray) -> dict:
+def compute_extended_metrics(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
+                             model_cfg: ModelConfig = None) -> dict:
     """Imbalance/fairness metrics for paper tables: PR-AUC, ROC-AUC, macro-F1,
     balanced accuracy, demographic-parity gap (DP_gap), equalized-odds gap (EOD_gap).
     """
     Xa = np.hstack([X, A.reshape(-1, 1)])
-    logits = Xa @ theta
+    logits = _logits_np(theta, Xa, model_cfg or ModelConfig())
     probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -50, 50)))
     pred = (logits > 0).astype(np.float64)
 

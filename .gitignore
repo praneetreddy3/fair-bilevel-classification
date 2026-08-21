@@ -27,6 +27,7 @@ FairSynData/
 # Raw datasets (large, re-downloadable via the loaders / ucimlrepo fallback)
 CreditData/
 UCIAdultdataset/
+GermanData/
 
 # Runtime logs
 logs/
