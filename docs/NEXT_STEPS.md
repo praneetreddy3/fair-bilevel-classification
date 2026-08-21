@@ -12,10 +12,11 @@ The end goal is this table, every cell filled with mean ± std over seeds:
 |---|---|---|
 | UCI Adult | have (needs MLP + reseed) | **TODO** (add Adult to FairSynData) |
 | Credit (Default of Credit Card) | have (needs MLP + reseed) | **TODO** (add Credit to FairSynData) |
-| Law | **TODO** (run our model on Law) | have (reference's own dataset) |
-| German Credit (Yanjia) | in progress (balanced attr) | optional |
+| Law | have (5-seed final run, `scripts/run_final.sh`, see `docs/RESULTS.md`) | have (reference's own dataset) |
+| German Credit *(secondary)* | have (5-seed final run, age sensitive attr — fixed the earlier foreign-worker skew; `scripts/run_german.sh`, see `docs/PROJECT_STATUS.md`) | optional |
 
-So two integration jobs remain: **our model on Law**, and **the reference model on Adult + Credit**.
+The one integration job that remains: **the reference model on Adult + Credit** (Step 3
+below). "Our model on Law" (Step 2) is done.
 
 ---
 
@@ -60,11 +61,22 @@ Deliverable: pipeline accuracy within a small band of baseline while EO gap stay
 
 ## Step 2 — Run OUR model on the Law dataset
 
-1. Add `pipeline/load_law.py` (mirror `load_credit.py`): read `FairSynData/rawdata/law.csv`,
-   sensitive = **race** (White/Non-White), label = **pass_bar**.
-2. Wire `--data law` into `run_draft.py`.
-3. Run our model on Law → fills the "our model / Law" cell (apples-to-apples on the reference's
-   own dataset).
+**Status: DONE.** `pipeline/load_law.py` added, `--data law` wired in, 5-seed final run
+via `scripts/run_final.sh` — fills the "our model / Law" cell (see `docs/RESULTS.md`).
+
+1. ~~Add `pipeline/load_law.py` (mirror `load_credit.py`): read `FairSynData/rawdata/law.csv`,
+   sensitive = **race** (White/Non-White), label = **pass_bar**.~~
+2. ~~Wire `--data law` into `run_draft.py`.~~
+3. ~~Run our model on Law → fills the "our model / Law" cell (apples-to-apples on the reference's
+   own dataset).~~
+
+## Step 2b — Fix German Credit (secondary, not in the comparison matrix above)
+
+**Status: DONE.** `pipeline/load_german.py` added (UCI id 144, sensitive = **age**,
+balanced ~52/48 split — the original **foreign worker** attribute was 96/4, too skewed
+for a stable EO estimate), wired into `run_draft.py` as `--data german`, 5-seed final run
+via `scripts/run_german.sh`, folded into T1/T2 tables and figures. See
+`docs/PROJECT_STATUS.md` for the full before/after comparison.
 
 ## Step 3 — Run the REFERENCE model (FairSynData) on Adult + Credit
 

@@ -232,6 +232,25 @@ def check6_determinism(adult_default_result=None):
     )
 
 
+# ---------------------------------------------------------------------------
+# 7. MLP smoke run: --model mlp finishes with no NaN; baseline + pipeline populated.
+# (Smoke test only -- no known-good MLP numbers exist yet to regress against.)
+# ---------------------------------------------------------------------------
+def check7_mlp_smoke_run():
+    fname = _tmp_name("mlp_smoke")
+    rc, err = _run([
+        "--data", "german", "--sensitive", "age", "--model", "mlp", "--hidden_dim", "8",
+        "--num_clients", "3", "--rounds", "3", "--K_inner", "30",
+        "--results_file", fname,
+    ])
+    if rc != 0:
+        check("MLP smoke run finishes with no NaN; baseline+pipeline populated", False, err.strip()[:300])
+        return
+    d = _load_tmp(fname)
+    ok = bool(d.get("baseline")) and bool(d.get("pipeline")) and not _has_nan(d)
+    check("MLP smoke run finishes with no NaN; baseline+pipeline populated", ok)
+
+
 def main():
     print("=" * 70)
     print("VERIFICATION HARNESS")
@@ -243,6 +262,7 @@ def main():
     adult_default_result = check4_adult_default_regression()
     check5_ablation_sanity()
     check6_determinism(adult_default_result)
+    check7_mlp_smoke_run()
     _cleanup()
     print("=" * 70)
     n_pass = sum(RESULTS)
