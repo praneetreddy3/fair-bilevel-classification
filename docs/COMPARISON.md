@@ -6,15 +6,19 @@
 |---|---|---|---|---|
 | Adult  | 0.6962 ± 0.0084 | 0.0687 ± 0.0459 | 0.7738 | 0.1192 |
 | Credit | 0.7372 ± 0.0229 | 0.0675 ± 0.0128 | 0.7445 | 0.0098 |
-| Law    | 0.6999 ± 0.0191 | 0.2624 ± 0.0769 | **blocked** | **blocked** |
+| Law    | 0.6999 ± 0.0191 | 0.2624 ± 0.0769 | 0.8438 | 0.0849 |
 
 "Our method" columns are the pipeline rows from `outputs/tables/T1_main_performance.csv` /
 `T2_fairness.csv` (5-seed final runs, see `docs/RESULTS.md`). Reference-model numbers are a
 single run each (see "Seeds" below). CSV mirror: `outputs/tables/COMPARISON.csv`, which also
 carries FairSynData's full 5-point `rho_o` sweep per dataset, not just the headline value.
 
-Law's reference cell is still blocked — the convergence fixes below (scale + column-order) were
-diagnosed on Adult/Credit and not re-applied to Law in this run; see "What's still blocked".
+All three reference cells are now filled. Law converged cleanly on the first attempt at `K=20`
+with **no scale or column-order fix needed** — its raw `rawdata/law.csv` already ends with
+`[..., race, pass_bar]` (the positional convention FairSynData's prediction code relies on) and
+has no catastrophic-scale column like Adult's `capital-gain` (Law's one zero-IQR column,
+`fulltime`, only ranges 1–2, nowhere near the 99999-vs-O(1) imbalance that broke Adult). See
+"Law reference run" below for the convergence check.
 
 ## What changed since the last attempt
 
@@ -94,18 +98,35 @@ moderate constraint strength) — the two methods don't share a comparable "rho"
 a reasonable representative point rather than a tuned/cherry-picked best case; the full sweep is
 in `outputs/tables/COMPARISON.csv` for transparency.
 
-## What's still blocked / out of scope for this run
+## Law reference run
 
-- **Law's reference cell.** The scale bug and column-order bug were diagnosed and fixed for
-  Adult/Credit specifically; I didn't re-run Law under `K=20` to check whether it has its own
-  version of either issue (Law's raw CSV already satisfies the positional `[..., sensitive,
-  target]` convention, so the column-order bug likely doesn't apply, but that hasn't been
-  verified against a live run in this session).
+Re-ran Law under the same `K=20` setup used for Adult/Credit (`FairSynData/mycodes/myParams.py`
+was already changed; no dataset-specific edits needed this time). Convergence check:
+
+- `obj_val_P`/`loss_real` moved from `ln(2) = 0.6931` down to ~0.38–0.48 by outer iteration 20
+  (same order of movement as Adult/Credit's converged runs).
+- `TPR_group0 != TPR_group1` at every `rho_o` (not a constant-class predictor).
+- EO gap drops sharply as `rho_o` increases and then plateaus rather than continuing strictly
+  monotonically — consistent with a real fairness-constrained method reaching a floor, not a
+  frozen/degenerate optimizer:
+
+| rho_o | Law accuracy | Law EO gap |
+|---|---|---|
+| 0     | 0.8709 | 0.3758 |
+| 10    | 0.8637 | 0.0977 |
+| 100   | 0.8438 | 0.0849 |
+| 1000  | 0.8375 | 0.0882 |
+| 10000 | 0.8378 | 0.0919 |
+
+Headline number uses the same **`rho_o=100`** convention as Adult/Credit.
+
+## What's still out of scope for this run
+
 - **Seeds.** FairSynData has no `--seed` CLI argument — `set_seed(seed=42)` is called at fixed
   points in `main.py` with no plumbing to vary it. Adding that would be new code, not a data-prep
-  or hyperparameter fix, and wasn't part of what was authorized. Both reference numbers above are
-  a single run at the codebase's one supported seed (42), not a 5-seed mean like our own method's
-  numbers — stated plainly rather than presented as equivalent.
+  or hyperparameter fix, and wasn't part of what was authorized. All three reference numbers
+  above are a single run at the codebase's one supported seed (42), not a 5-seed mean like our
+  own method's numbers — stated plainly rather than presented as equivalent.
 - **CTGAN / full DB-backed path.** Stayed on `NO_DB=1` + `syn_2_skip=true`. `sdv`/`ctgan` aren't
   installed in any available Python environment on this machine (`.venv`, system Python, or the
   Anaconda base env that has `torch`) — the fixes above were sufficient to get real convergence
