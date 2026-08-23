@@ -17,7 +17,7 @@ of `scripts/run_final.sh`.
 |---|---|---|---|---|
 | Default of Credit Card Clients | sex | 0.759 / 0.054 | 0.737 / 0.068 | matches baseline; already-fair baseline |
 | UCI Adult (reference) | sex | 0.845 / 0.019 | 0.696 / 0.069 | small fairness gain, real accuracy cost |
-| Law School (reference paper's own dataset) | race | 0.779 / 0.381 | 0.700 / 0.262 | clearest EO win (~31% reduction), moderate accuracy cost |
+| Law School (reference paper's own dataset) | race | 0.779 / 0.381 | 0.700 / 0.262 | clearest EO win *vs. its own baseline* (~31% reduction); reference model is still far fairer (see `docs/COMPARISON.md`) |
 | German Credit *(secondary, single seed)* | foreign worker | 0.700 / 0.174 | 0.615 / 0.299 | EO **worsened**, accuracy dropped |
 
 ## Key findings

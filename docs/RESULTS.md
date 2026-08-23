@@ -55,10 +55,13 @@ RNG; it now reuses the seeded generator threaded through the whole run.
   EO by ~31% (0.381 → 0.262) and EOD by ~42% (0.400 → 0.232) at a real but smaller
   accuracy cost than Adult (0.779 → 0.700), and DP gap actually rises slightly (0.191 →
   0.243). This is the dataset where the fairness intervention shows the clearest,
-  largest EO/EOD improvement of the three.
+  largest EO/EOD improvement of the three **relative to its own baseline** — this is not a
+  claim about beating the external FairSynData reference model, which is in fact far fairer
+  than us on Law; see `docs/COMPARISON.md` for that comparison.
 - **Ablations (single-seed, see T5 in `docs/PAPER_TABLES.md`):** removing Universum
-  worsens EO on both credit and adult, confirming the **S-balanced Universum is the
-  active fairness mechanism**; zeroing the ρ penalty (`fairness_off`) barely changes EO
+  worsens EO on adult (0.0635 → 0.1571) but *improves* it on credit (0.0820 → 0.0487) —
+  confirming the **S-balanced Universum is the active fairness mechanism on Adult**, not
+  uniformly across datasets; zeroing the ρ penalty (`fairness_off`) barely changes EO
   on credit, i.e. the augmented-Lagrangian term adds little on top there.
 
 **Known limitation:** `--dirichlet_alpha 0.1` still crashes (extreme skew starves a

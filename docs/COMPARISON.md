@@ -4,21 +4,104 @@
 
 | Dataset | Our method — Accuracy | Our method — EO gap | Reference (FairSynData) — Accuracy | Reference (FairSynData) — EO gap |
 |---|---|---|---|---|
-| Adult  | 0.6962 ± 0.0084 | 0.0687 ± 0.0459 | 0.7738 | 0.1192 |
-| Credit | 0.7372 ± 0.0229 | 0.0675 ± 0.0128 | 0.7445 | 0.0098 |
-| Law    | 0.6999 ± 0.0191 | 0.2624 ± 0.0769 | 0.8438 | 0.0849 |
+| Adult  | 0.7471 ± 0.0129 | 0.0728 ± 0.0545 | 0.7738 | 0.1192 |
+| Credit | 0.7679 ± 0.0174 | 0.0347 ± 0.0210 | 0.7445 | 0.0098 |
+| Law    | 0.6872 ± 0.0312 | 0.2402 ± 0.0660 | 0.8438 | 0.0849 |
 
-"Our method" columns are the pipeline rows from `outputs/tables/T1_main_performance.csv` /
-`T2_fairness.csv` (5-seed final runs, see `docs/RESULTS.md`). Reference-model numbers are a
-single run each (see "Seeds" below). CSV mirror: `outputs/tables/COMPARISON.csv`, which also
-carries FairSynData's full 5-point `rho_o` sweep per dataset, not just the headline value.
+"Our method" numbers changed from the previous version of this doc — see "Model selection"
+below. They are **not** the `scripts/run_final.sh` winner configs used in
+`outputs/tables/T1_main_performance.csv`/`T2_fairness.csv` (those tables are untouched); they're
+each dataset's operating point chosen by a validation-only rule out of a 10-way
+(rho × Universum on/off) sweep. Reference-model numbers are unchanged from before (a single run
+each — see "Seeds" below). CSV mirror: `outputs/tables/COMPARISON.csv`; full 10-point grid in
+`outputs/tables/fair_comparison_grid.csv`.
 
-All three reference cells are now filled. Law converged cleanly on the first attempt at `K=20`
+All three reference cells are filled. Law converged cleanly on the first attempt at `K=20`
 with **no scale or column-order fix needed** — its raw `rawdata/law.csv` already ends with
 `[..., race, pass_bar]` (the positional convention FairSynData's prediction code relies on) and
 has no catastrophic-scale column like Adult's `capital-gain` (Law's one zero-IQR column,
 `fulltime`, only ranges 1–2, nowhere near the 99999-vs-O(1) imbalance that broke Adult). See
 "Law reference run" below for the convergence check.
+
+## Model selection: validation only, never test
+
+`draft_model/run_draft.py` already splits off a validation set (`--val_frac=0.2`, disjoint from
+test) and logs `round_logs[-1].val_accuracy`/`val_EO_gap` — the validation performance of the
+same final model whose test metrics get reported. Selection rule, fixed *before* looking at any
+test number: for each dataset, sweep `rho ∈ {0.01, 0.05, 0.1, 0.5, 1.0} × {Universum on,
+Universum off} × 5 seeds` (50 runs/dataset, using each dataset's other final settings from
+`scripts/run_final.sh`), then **maximize mean validation accuracy among configs with mean
+validation EO gap ≤ 0.1** (the method's own `epsilon_EO` fairness target, not a number invented
+for this selection); if none qualify, **minimize mean validation EO gap** instead. Report that
+config's *test* accuracy/EO gap as a 5-seed mean ± std. Script: `scripts/fair_comparison.py`;
+full grid: `outputs/tables/fair_comparison_grid.csv`.
+
+**Selected configs:**
+
+| Dataset | Selected config | Validation acc / EO (drove the choice) | Test acc / EO (reported) |
+|---|---|---|---|
+| Adult  | rho=0.01, **no-universum** | 0.7486 / 0.0843 | 0.7471 ± 0.0129 / 0.0728 ± 0.0545 |
+| Credit | rho=0.01, **no-universum** | 0.6896 / 0.0247 | 0.7679 ± 0.0174 / 0.0347 ± 0.0210 |
+| Law    | rho=1.0, universum (**tied** with no-universum) | 0.8090 / 0.1733 | 0.6872 ± 0.0312 / 0.2402 ± 0.0660 |
+
+**Two things worth being upfront about, since they cut against what was assumed going in:**
+
+1. **The selection picked no-Universum for *both* Adult and Credit — not "Universum helps
+   Adult."** The `T5_ablation.csv` finding that Universum helps Adult is real but narrower than
+   it sounds: it's true *at one fixed rho* (the old winner's `rho=0.1`) — at that specific rho,
+   no-Universum's test EO is 0.1128 vs. Universum's 0.0687, confirming the ablation. But once rho
+   is also chosen freely (not pinned to the Universum-on winner's value), no-Universum's *own*
+   best rho (0.01) reaches a notably higher validation *and* test accuracy (≈0.75 vs. ≈0.70) at
+   comparable EO — so it wins on the selection rule anyway. "Universum helps Adult" is correct
+   only as a fixed-rho, single-seed statement; it is not the right lens once rho is optimized
+   too. On Credit, no-Universum wins on both axes at every rho tested, consistent with the
+   original T5 finding (fairness improves without it) plus a real accuracy gain the single-seed
+   ablation didn't surface.
+2. **Universum on/off produced byte-identical results for Law at every rho and seed.** Traced to
+   `draft_model/minibatch_design.py:build_universum_templates` — it returns an empty Universum
+   set whenever `U_size = min(Delta_s, Ds_size, Delta_k) == 0`, which happens on essentially
+   every client-round minibatch given Law's severe minority-intersection sparsity (race ×
+   pass_bar). So Universum is already effectively empty for Law even when "on" — `--no_universum`
+   is a no-op for this dataset specifically, not a bug in the sweep. Confirmed independently with
+   a standalone re-run outside the sweep script (bit-identical `round_logs`). Selection is a tie;
+   which one gets reported doesn't matter.
+
+Also worth flagging: no config for Law reached the 0.1 validation-EO target within the swept rho
+range (best was 0.1733 at rho=1.0), so Law's selection used the fallback rule (minimize
+validation EO), unlike Adult/Credit which both had qualifying configs to choose among.
+
+## Matched-operating-point comparison
+
+Per-dataset: our full sweep's **Pareto-efficient frontier** (on *test* accuracy/EO gap, across
+all 10 rho×Universum combos — a broader "what's achievable at these honest, pre-registered
+settings" view, distinct from the single validation-selected claim above) vs. the reference's
+one point, at matched accuracy and at matched EO gap.
+
+**Adult** — our frontier never reaches the reference's accuracy (0.7738); our highest-accuracy
+frontier point (rho=0.01, no-universum) is acc=0.7471, EO=0.0728 — **notably, already fairer
+than the reference's EO=0.1192** even at our best accuracy. At matched EO (≤0.1192), our nearest
+point is the same one: acc=0.7471 (2.7 points below reference) at EO=0.0728 (fairer than
+reference). **Verdict: we don't match reference accuracy, but at every accuracy level we reach,
+we're fairer than the reference — a real improvement over the previous single-rho comparison
+(was 8 points behind on accuracy; now 2.7).**
+
+**Credit** — at ≥ reference accuracy (0.7445), our nearest frontier point (rho=0.5,
+no-universum) reaches acc=0.7557 with EO=0.0133 — slightly higher (less fair) than reference's
+EO=0.0098, but **our accuracy there (0.7557) exceeds the reference's (0.7445)**. Our frontier
+never quite reaches reference's EO floor (0.0098); closest is 0.0133 at acc=0.7557 — still
+**higher accuracy than reference at nearly-matched fairness**. **Verdict: reference retains a
+slight edge on pure fairness (0.0098 vs. our 0.0133), but our frontier now sits at or above the
+reference on accuracy at every comparable fairness level — reversed from before, where reference
+dominated both axes.**
+
+**Law** — our frontier never reaches reference accuracy (0.8438) or reference EO (0.0849); best
+accuracy point is acc=0.6999 (rho=0.1, universum), EO=0.2624; fairest point is EO=0.2402
+(rho=1.0), acc=0.6872. **Verdict: reference still dominates both axes on Law** — unchanged from
+the previous comparison; the Universum tie (above) means there was no lever here to close the
+gap the way there was for Adult/Credit.
+
+Figure: `outputs/pareto_tradeoff.png` — solid lines = Universum on, dashed = Universum off,
+large diamond = validation-selected point, star = reference point, one color per dataset.
 
 ## What changed since the last attempt
 
@@ -147,3 +230,7 @@ grep -n "rho_o=\|(NO_DB) Wrote metrics" logs/1_algorithm.log   # full 5-point sw
 the `mycodes/datasetsPreprocess.py`/`mycodes/myParams.py` edits, and the `_gen_splits.py` /
 `rawdata/_prep_adult_credit.py` helper scripts exist on disk but are not tracked by this repo's
 git history.
+
+To reproduce the validation-selected "our method" numbers and the matched-point comparison:
+`"C:\Python311\python.exe" scripts\fair_comparison.py` (uses cached results in
+`outputs/pareto_sweep/` when present, ~15-20 min from scratch for the missing half of the grid).
