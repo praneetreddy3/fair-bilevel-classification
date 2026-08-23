@@ -4,110 +4,125 @@
 
 | Dataset | Our method — Accuracy | Our method — EO gap | Reference (FairSynData) — Accuracy | Reference (FairSynData) — EO gap |
 |---|---|---|---|---|
-| Adult  | 0.6962 ± 0.0084 | 0.0687 ± 0.0459 | **blocked** | **blocked** |
-| Credit | 0.7372 ± 0.0229 | 0.0675 ± 0.0128 | **blocked** | **blocked** |
+| Adult  | 0.6962 ± 0.0084 | 0.0687 ± 0.0459 | 0.7738 | 0.1192 |
+| Credit | 0.7372 ± 0.0229 | 0.0675 ± 0.0128 | 0.7445 | 0.0098 |
 | Law    | 0.6999 ± 0.0191 | 0.2624 ± 0.0769 | **blocked** | **blocked** |
 
 "Our method" columns are the pipeline rows from `outputs/tables/T1_main_performance.csv` /
-`T2_fairness.csv` (5-seed final runs, see `docs/RESULTS.md`). CSV mirror:
-`outputs/tables/COMPARISON.csv`.
+`T2_fairness.csv` (5-seed final runs, see `docs/RESULTS.md`). Reference-model numbers are a
+single run each (see "Seeds" below). CSV mirror: `outputs/tables/COMPARISON.csv`, which also
+carries FairSynData's full 5-point `rho_o` sweep per dataset, not just the headline value.
 
-**None of the reference-model cells could be filled in — not just Adult/Credit, but Law too.**
-Details below.
+Law's reference cell is still blocked — the convergence fixes below (scale + column-order) were
+diagnosed on Adult/Credit and not re-applied to Law in this run; see "What's still blocked".
 
-## What I did
+## What changed since the last attempt
 
-FairSynData (`FairSynData/`, gitignored — teammate's code, not tracked in this repo) only
-shipped dataset classes for `law` and `dutch`. To get Adult/Credit into it:
+The previous NO_DB/`syn_2_skip` run used FairSynData's smoke-test defaults (`K=3`,
+`epochs=1`) and produced degenerate results (loss frozen at exactly ln 2 on Adult). Dr. Mousavi
+authorized tuning the reference model's iteration budget to realistic values. Investigating with
+that authorization turned up a different, more specific set of problems than "budget too small":
 
-1. Added `FairSynData/mydatasets/Adult.py` and `Credit.py` (copied `Law.py`'s structure),
-   sensitive attribute `sex`, targets `income>50K` / `default`, registered both in
-   `mydatasets/DatasetFactory.py`.
-2. Built `FairSynData/rawdata/adult.csv` and `credit.csv` from `UCIAdultdataset/` and
-   `CreditData/`, using the same target/sensitive definitions as our own
-   `pipeline/load_adult.py` / `load_credit.py` (income >50K positive, sex male=1/female=0;
-   default=1, sex male=1/female=0), with categorical features label-encoded (kept as raw
-   strings for `sex`/`income`/`default` so FairSynData's own per-dataset preprocessing could
-   map them to its {0,1}/{-1,1} convention, matching how it treats `race`/`pass_bar` for Law).
-3. Discovered FairSynData's dataset support isn't just the `Dataset` subclass — three
-   functions in `mycodes/datasetsPreprocess.py` (`preprocess_data`, `scale_data`,
-   `split_data_to_tensors`) hard-code an if/elif dispatch on `data_name` for `'law'`/`'dutch'`
-   only. Added `'adult'`/`'credit'` branches mirroring the existing ones (label mapping,
-   scaling-exclusion column). This is data plumbing (which column is the sensitive attribute,
-   which column is the target), not a change to the optimization algorithm.
-4. Also had to guard `detect_outliers()` (same file) against non-numeric columns — it computes
-   quantiles over every feature column including the still-string `sex`/`race` column and
-   raised `TypeError`. Its output is logged only, never used to filter data, so skipping
-   non-numeric columns is a no-op fix, not a math change.
-5. Generated 5-client splits for Adult via `generate_datasets.py`'s `split_existing_dataset()`
-   (5 clients, equal split — matching our own final runs' `--num_clients 5`), copied into
-   `datasets/dummy_run/` with the naming pattern `main.py` expects in `NO_DB=1` mode (its
-   `data_path` resolves to the literal string `"dummy_run"` regardless of dataset name — a
-   pre-existing quirk in `mycodes/myParams.py`'s `get_file_name()`, not something I touched).
-6. Ran `NO_DB=1 python main.py --dataset_name adult --syn_2_skip true` (skips CTGAN, so the
-   missing `sdv`/`ctgan` packages in the available Python env never get imported — confirmed
-   `sdv` is absent from both `.venv` and the system Python, but `torch`/`pandas`/`sklearn` are
-   present in the local Anaconda base env, which is what actually ran this).
+1. **`K=3` → `K=20`** (`FairSynData/mycodes/myParams.py`, `AlgorithmParams.K`) — genuinely a
+   smoke-test value for the outer bilevel loop that refines the fairness-constrained synthetic
+   data `xhat`. No CLI flag exposes this (checked `utils/parse_args.py`); it's a direct
+   default-value edit. `epochs`/`max_iter`/`optimSet` were **not** touched — FairSynData's
+   custom L-BFGS (`mycodes/mylbfgs.py`) already defaults to `max_iter=1000`, and `epochs=1` is
+   correct by design for an L-BFGS optimizer driven by a full-batch closure (one `step()` call
+   already runs up to `max_iter` internal line-search iterations).
 
-Steps 1, 2, 5, 6 ran cleanly end-to-end (dataset loads, splits generate, training pipeline
-executes without crashing, no missing-dependency or Windows-path issues).
+2. **Adult's `capital-gain`/`capital-loss` scale bug.** These columns are ~91%/95% zero, so
+   their IQR is 0. FairSynData's `RobustScaler`-based `scale_data()` (unmodified) falls back to
+   `scale_=1` for zero-IQR columns (sklearn's documented behavior), leaving them completely
+   unscaled — `capital-gain` up to 99,999 next to every other feature's roughly -4 to +9 robust-
+   scaled range. That ~5-order-of-magnitude imbalance broke the line search on the very first
+   step (theta never left its all-zero init). **Fix:** `log1p` on both columns in my own
+   `FairSynData/rawdata/_prep_adult_credit.py` (not FairSynData code) — this doesn't give the
+   column a nonzero IQR (it's still >75% zero after the transform), but it bounds the nonzero
+   tail to ~0-11.5 instead of ~0-99,999, which is what actually mattered for the scaler's
+   zero-IQR passthrough.
 
-## What's blocked, and why
+3. **Credit's `BILL_AMT*`/`PAY_AMT*` scale issue**, same class of problem — `PAY_AMT2` has a
+   raw max of ~1.68M against a median of ~2,000. One client hit a NaN gradient
+   (`norm_grad_2_xhat is nan`) mid-run at `K=20`. **Fix:** signed `log1p`
+   (`sign(x) * log1p(|x|)`, since `BILL_AMT*` can be negative) on both column families, same
+   script.
 
-**The reference model doesn't converge under this run path — for any dataset, not just the
-new ones.** With Adult wired up and `main.py` run in `NO_DB=1` mode:
+4. **A real, separate bug: wrong column read as the sensitive attribute.** After fixing 1–3,
+   Credit still crashed with `ZeroDivisionError` in `mycodes/dataArrange.py:arrange_pred_details`
+   at the *system*-level prediction (not per-client) — division by the count of
+   `sensitive_attr == 1`, i.e. that count was zero for the whole concatenated test set. Tracing
+   it: `mycodes/trainAndPredict.py:predict_client_test_data` reads the sensitive attribute and
+   target **positionally** — `test_data.iloc[:, -2]` / `iloc[:, -1]` — not by column name. Law's
+   and Dutch's raw CSVs happen to already end with `[..., sensitive, target]` by construction,
+   but neither `rawdata/adult.csv` nor `rawdata/credit.csv` actually had the sensitive column in
+   that position (Credit's `SEX` was the 2nd column out of 24, not the 2nd-to-last; Adult's
+   `sex` also wasn't literally last-but-one). For Credit this crashed outright; for Adult it very
+   likely explains the earlier run's suspicious `TPR_group1 = 0.0` result (some other column,
+   not `sex`, was silently read as "sensitive attribute" — no crash, because that column had a
+   nonzero count of value `1`, but it wasn't measuring the sex-based EO gap at all). **Fix:**
+   both `build_adult()` and `build_credit()` in `_prep_adult_credit.py` now explicitly reorder
+   columns to end with `[..., sensitive, target]`, matching `Adult.py`/`Credit.py`'s declared
+   `all_columns` order. This is a real bug in my own data-prep script, not in FairSynData —
+   FairSynData's positional convention is legitimate given Law/Dutch's raw files already satisfy
+   it; I just hadn't matched it for the two new datasets.
 
-- The inner-loop training loss (`obj_val_P = loss_real`) was reported as exactly
-  `0.6931473016738892` (= ln 2, the loss of an untrained model with all-zero weights) for
-  every one of the 5 clients and all 5 `rho_o` values swept (`0, 10, 100, 1000, 10000`).
-  It never moved. Every scenario terminated with `[Fail] - reach max iter setting` (K=3 outer
-  iterations, a hard-coded default in `mycodes/myParams.py`).
-- The resulting accuracy/EO_gap written to `outputs/results_latest.json` was exactly
-  `0.0000`/`0.0000` for all 5 scenarios — consistent with `sign()` of an all-zero model output
-  never equaling the ±1 labels, i.e. the weights literally never left their zero
-  initialization.
+None of the above touches FairSynData's optimization/fairness-constraint code
+(`mycodes/exactInnerMinOpt.py`, `solveNablaOuter.py`, `myFLAlg.py`, etc.) — only `K` (a stated
+hyperparameter default, explicitly authorized) and my own CSV-generation script.
 
-To rule out this being specific to my Adult data prep, I re-ran the identical `NO_DB=1
-main.py --dataset_name law --syn_2_skip true` command against Law's own pre-existing smoke-test
-fixture (`datasets/dummy_run/law_dummy_*.csv`, tiny synthetic data shipped with the repo). The
-loss did move off ln 2 slightly (`0.6508` + a `101.9` constraint-penalty term for one client),
-but the final accuracy/EO_gap were still degenerate: **constant `0.8333`/`0.0000` across every
-one of the 5 rho values**, i.e. the final classifier (fit via a single L-BFGS "epoch" —
-`train_and_predict_params.epochs = 1` in `mycodes/myParams.py`) collapses to predicting one
-constant class regardless of the fairness penalty strength. (That specific fixture is random
-synthetic noise with no real signal, so a constant-class prediction isn't damning on its own —
-but the same "loss never moves, rho has zero effect" signature as Adult's run makes it evidence
-of a shared root cause, not something dataset-specific.) I also found leftover, undocumented
-`outputs/results_latest.json` / log artifacts on disk from an earlier, uncommitted session
-(never in git history) showing the same pattern for what was apparently an earlier `adult` run
-(`accuracy: 0.8333`, `EO_gap: 0.0`, `TPR_group0 = TPR_group1 = 1.0`, i.e. "predict everyone
-positive") — I did not use those numbers; they're unreproducible and no more trustworthy than
-what I found here.
+## Convergence sanity check
 
-The likely root cause sits in FairSynData's own optimizer configuration for this fast
-`NO_DB`/`syn_2_skip` code path — `K=3` outer iterations and `epochs=1` for the final L-BFGS
-fit are defaults in `mycodes/myParams.py`, and tuning either is exactly the "method math" I was
-told not to touch. This is a limitation of the reference codebase's fast smoke-test path
-itself (likely the real experiments in the paper used the full DB-backed pipeline with a much
-larger iteration budget and/or CTGAN augmentation, not this quick local mode), not something
-introduced by wiring in Adult/Credit.
+After the fixes, both datasets show `obj_val_P`/`loss_real` moving substantially off `ln(2)`
+(e.g. Adult: ~0.69 → ~0.46 by outer iteration 20) and — the check that actually matters — a
+clean, monotonic fairness/accuracy tradeoff across the `rho_o` sweep `[0, 10, 100, 1000, 10000]`
+(higher `rho_o` = stronger fairness constraint):
 
-**I stopped here rather than tuning FairSynData's optimizer hyperparameters to force
-convergence**, per the instruction not to touch its method math. Adult/Credit are fully wired
-in and ready to produce numbers the moment someone either (a) increases the reference
-pipeline's iteration/epoch budget, or (b) runs it through the original DB-backed path it was
-designed for.
+| rho_o | Adult accuracy | Adult EO gap | Credit accuracy | Credit EO gap |
+|---|---|---|---|---|
+| 0     | 0.7780 | 0.2141 | 0.7683 | 0.2327 |
+| 10    | 0.7760 | 0.2005 | 0.7698 | 0.0686 |
+| 100   | 0.7738 | 0.1192 | 0.7445 | 0.0098 |
+| 1000  | 0.7619 | 0.0522 | 0.7247 | 0.0078 |
+| 10000 | 0.7605 | 0.0434 | 0.7225 | 0.0068 |
+
+EO gap decreases monotonically as `rho_o` increases on both datasets, with a modest accuracy
+cost — exactly the behavior a working fairness-constrained method should show, and the opposite
+of the earlier frozen/degenerate runs. `TPR_group0 != TPR_group1` at every setting (not a
+constant-class predictor). The headline numbers in the table above use **`rho_o=100`** (a
+moderate constraint strength) — the two methods don't share a comparable "rho" axis, so this is
+a reasonable representative point rather than a tuned/cherry-picked best case; the full sweep is
+in `outputs/tables/COMPARISON.csv` for transparency.
+
+## What's still blocked / out of scope for this run
+
+- **Law's reference cell.** The scale bug and column-order bug were diagnosed and fixed for
+  Adult/Credit specifically; I didn't re-run Law under `K=20` to check whether it has its own
+  version of either issue (Law's raw CSV already satisfies the positional `[..., sensitive,
+  target]` convention, so the column-order bug likely doesn't apply, but that hasn't been
+  verified against a live run in this session).
+- **Seeds.** FairSynData has no `--seed` CLI argument — `set_seed(seed=42)` is called at fixed
+  points in `main.py` with no plumbing to vary it. Adding that would be new code, not a data-prep
+  or hyperparameter fix, and wasn't part of what was authorized. Both reference numbers above are
+  a single run at the codebase's one supported seed (42), not a 5-seed mean like our own method's
+  numbers — stated plainly rather than presented as equivalent.
+- **CTGAN / full DB-backed path.** Stayed on `NO_DB=1` + `syn_2_skip=true`. `sdv`/`ctgan` aren't
+  installed in any available Python environment on this machine (`.venv`, system Python, or the
+  Anaconda base env that has `torch`) — the fixes above were sufficient to get real convergence
+  without needing that path, so it wasn't attempted.
 
 ## Repro
 
 ```
 cd FairSynData
+"C:\Users\HP\anaconda3\python.exe" rawdata\_prep_adult_credit.py   # regenerates rawdata/{adult,credit}.csv
 rm -f datasets/dummy_run/*.csv
 "C:\Users\HP\anaconda3\python.exe" _gen_splits.py adult   # or credit
 NO_DB=1 "C:\Users\HP\anaconda3\python.exe" main.py --dataset_name adult --syn_2_skip true
-cat outputs/results_latest.json   # last of 5 rho_o scenarios swept
+grep -n "rho_o=\|(NO_DB) Wrote metrics" logs/1_algorithm.log   # full 5-point sweep
 ```
 
 `FairSynData/` is gitignored, so `Adult.py`, `Credit.py`, `rawdata/adult.csv`, `rawdata/credit.csv`,
-the `mycodes/datasetsPreprocess.py` edits, and the `_gen_splits.py` / `rawdata/_prep_adult_credit.py`
-helper scripts exist on disk but are not tracked by this repo's git history.
+the `mycodes/datasetsPreprocess.py`/`mycodes/myParams.py` edits, and the `_gen_splits.py` /
+`rawdata/_prep_adult_credit.py` helper scripts exist on disk but are not tracked by this repo's
+git history.
