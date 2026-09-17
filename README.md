@@ -126,6 +126,8 @@ Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
 | Adult  | pipeline | 0.6962 ± 0.0084 | 0.5599 ± 0.0086 | 0.7383 ± 0.0085 | 0.5613 ± 0.0088 |
 | Law    | baseline | 0.7786 ± 0.0144 | 0.8611 ± 0.0108 | 0.6150 ± 0.0039 | 0.9794 ± 0.0001 |
 | Law    | pipeline | 0.6999 ± 0.0191 | 0.8057 ± 0.0174 | 0.6508 ± 0.0393 | 0.9578 ± 0.0112 |
+| COMPAS | baseline | 0.6398 ± 0.0031 | 0.6231 ± 0.0116 | 0.6474 ± 0.0032 | 0.6734 ± 0.0014 |
+| COMPAS | pipeline | 0.6322 ± 0.0153 | 0.6161 ± 0.0176 | 0.6282 ± 0.0156 | 0.6404 ± 0.0190 |
 
 **Fairness (mean ± std, 5 seeds)**
 
@@ -137,15 +139,20 @@ Final 5-seed runs (`scripts/run_final.sh`, per-dataset best settings — see
 | Adult  | pipeline | 0.1351 ± 0.0586 | 0.0687 ± 0.0459 | 0.1116 ± 0.0309 |
 | Law    | baseline | 0.1908 ± 0.0053 | 0.3808 ± 0.0057 | 0.4001 ± 0.0166 |
 | Law    | pipeline | 0.2430 ± 0.0713 | 0.2624 ± 0.0769 | 0.2324 ± 0.0934 |
+| COMPAS | baseline | 0.2477 ± 0.0151 | 0.2761 ± 0.0133 | 0.2817 ± 0.0108 |
+| COMPAS | pipeline | 0.1457 ± 0.0493 | 0.1658 ± 0.0604 | 0.1778 ± 0.0560 |
 
 **Headline:** on Credit and Adult, the calibrated baseline is already close to fair, so
 the method mainly trades accuracy for little fairness gain. **Law** — the reference
-paper's own dataset, and the most direct comparison point — is where the fairness
-intervention shows its clearest effect: the baseline is genuinely unfair (EO 0.381) and
-the pipeline cuts that by ~31% (to 0.262) and EOD by ~42% (0.400 → 0.232) at a real but
-moderate accuracy cost. Ablations confirm the **Universum construction is the active
-fairness mechanism** (removing it clearly worsens EO on both Credit and Adult). Full
-verdict, caveats, and known limitations: `docs/RESULTS.md`.
+paper's own dataset — shows a clear effect relative to its own baseline (EO 0.381 → 0.262,
+~31%) at a moderate accuracy cost. **COMPAS** — a 4th, independent real-world application
+(ProPublica recidivism data, not used by the reference paper) — is the cleanest result of
+the four: a genuinely unfair baseline (EO 0.276, the well-documented COMPAS racial bias)
+drops ~40% to 0.166 at under 1 point of accuracy cost. Ablations confirm the **Universum
+construction's effect is dataset-dependent**, not uniformly helpful: it's the active
+fairness mechanism on Adult, hurts on Credit, and the validation-selected COMPAS config
+turns it off entirely (see `scripts/compas_sweep.py`). Full verdict, caveats, and known
+limitations: `docs/RESULTS.md`.
 
 Figures: `outputs/final_pareto.png` / `outputs/final_bars.png` (clean, one point per
 dataset — use these in the manuscript); `outputs/results_pareto.png` / `results_bars.png`

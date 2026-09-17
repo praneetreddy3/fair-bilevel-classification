@@ -39,6 +39,11 @@ done
 echo "===== COMPAS: run scripts/compas_sweep.py separately first ====="
 echo "(picks rho/Universum via validation-only selection -- same rule as credit/adult/law's"
 echo " fair_comparison.py -- then writes draft_results_compas_final_seed{1..5}.json itself)."
+echo "Winner as of the last sweep: rho=0.01, Universum OFF -- equivalent to:"
+echo "  python -m draft_model.run_draft --data compas --sensitive race \\"
+echo "    --add_intercept true --tune_threshold true --dp_variant none \\"
+echo "    --rho 0.01 --epsilon_EO 0.1 --no_universum --seed \$s \$COMMON \\"
+echo "    --results_file draft_results_compas_final_seed\$s.json"
 if ls "$(dirname "$0")/../outputs"/draft_results_compas_final_seed*.json >/dev/null 2>&1; then
   echo "  (compas final files already present -- skipping, run compas_sweep.py again to redo)"
 else

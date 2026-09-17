@@ -1,4 +1,4 @@
-# Results Summary — Credit Risk, UCI Adult & Law School (FINAL, post-determinism-fix)
+# Results Summary — Credit Risk, UCI Adult, Law School & COMPAS (FINAL, post-determinism-fix)
 
 Final 5-seed runs via `scripts/run_final.sh` (seeds 1-5, `--num_clients 5 --rounds 8
 --K_inner 100 --deterministic true`), per-dataset best settings below. Full tables in
@@ -16,6 +16,7 @@ RNG; it now reuses the seeded generator threaded through the whole run.
 - **Credit:** `--sensitive sex --add_intercept true --tune_threshold true --dp_variant none --rho 0.05 --epsilon_EO 0.1`
 - **Adult:** `--sensitive sex --add_intercept false --tune_threshold false --dp_variant none --rho 0.1 --epsilon_EO 0.1`
 - **Law:** `--sensitive race --add_intercept true --tune_threshold true --dp_variant none --rho 0.1 --epsilon_EO 0.1`
+- **COMPAS:** `--sensitive race --add_intercept true --tune_threshold true --dp_variant none --rho 0.01 --no_universum --epsilon_EO 0.1` — picked by `scripts/compas_sweep.py`'s validation-only selection (max validation accuracy subject to validation EO_gap <= 0.1), the same rule `scripts/fair_comparison.py` uses for the other three datasets, over a rho x Universum-on/off x 5-seed grid. Universum losing the selection here is itself a real finding, not a shortcut — see verdict below.
 
 ## Performance (mean ± std, 5 seeds)
 
@@ -27,6 +28,8 @@ RNG; it now reuses the seeded generator threaded through the whole run.
 | Adult  | pipeline | 0.6962 ± 0.0084 | 0.5599 ± 0.0086 | 0.7383 ± 0.0085 | 0.5613 ± 0.0088 |
 | Law    | baseline | 0.7786 ± 0.0144 | 0.8611 ± 0.0108 | 0.6150 ± 0.0039 | 0.9794 ± 0.0001 |
 | Law    | pipeline | 0.6999 ± 0.0191 | 0.8057 ± 0.0174 | 0.6508 ± 0.0393 | 0.9578 ± 0.0112 |
+| COMPAS | baseline | 0.6398 ± 0.0031 | 0.6231 ± 0.0116 | 0.6474 ± 0.0032 | 0.6734 ± 0.0014 |
+| COMPAS | pipeline | 0.6322 ± 0.0153 | 0.6161 ± 0.0176 | 0.6282 ± 0.0156 | 0.6404 ± 0.0190 |
 
 ## Fairness (mean ± std, 5 seeds)
 
@@ -38,6 +41,8 @@ RNG; it now reuses the seeded generator threaded through the whole run.
 | Adult  | pipeline | 0.1351 ± 0.0586 | 0.0687 ± 0.0459 | 0.1116 ± 0.0309 |
 | Law    | baseline | 0.1908 ± 0.0053 | 0.3808 ± 0.0057 | 0.4001 ± 0.0166 |
 | Law    | pipeline | 0.2430 ± 0.0713 | 0.2624 ± 0.0769 | 0.2324 ± 0.0934 |
+| COMPAS | baseline | 0.2477 ± 0.0151 | 0.2761 ± 0.0133 | 0.2817 ± 0.0108 |
+| COMPAS | pipeline | 0.1457 ± 0.0493 | 0.1658 ± 0.0604 | 0.1778 ± 0.0560 |
 
 ## Verdict
 
@@ -58,6 +63,18 @@ RNG; it now reuses the seeded generator threaded through the whole run.
   largest EO/EOD improvement of the three **relative to its own baseline** — this is not a
   claim about beating the external FairSynData reference model, which is in fact far fairer
   than us on Law; see `docs/COMPARISON.md` for that comparison.
+- **COMPAS (new, 4th real-world application):** this is the cleanest fairness result of
+  the four. The calibrated baseline is genuinely unfair (EO 0.276, DP 0.248, EOD 0.282 —
+  African-American defendants get flagged at a much higher true-positive rate than
+  Caucasian defendants, the well-documented COMPAS bias direction). The pipeline cuts EO
+  by ~40% (0.276 → 0.166), DP by ~41% (0.248 → 0.146), and EOD by ~37% (0.282 → 0.178),
+  at a small accuracy cost (0.640 → 0.632, about 0.8 points) — the best fairness-for-
+  accuracy trade-off of the four datasets. The validation-only sweep (`scripts/compas_sweep.py`)
+  selected `rho=0.01` with Universum **off**: for COMPAS, the augmented-Lagrangian penalty
+  alone drives the fairness gain, and adding Universum on top made both accuracy and EO
+  *worse* at every rho tried (see `outputs/tables/compas_sweep.csv`) — a third, distinct
+  data point (Adult: helps; Credit: hurts; COMPAS: hurts) confirming Universum's effect is
+  dataset-dependent rather than uniformly beneficial.
 - **Ablations (single-seed, see T5 in `docs/PAPER_TABLES.md`):** removing Universum
   worsens EO on adult (0.0635 → 0.1571) but *improves* it on credit (0.0820 → 0.0487) —
   confirming the **S-balanced Universum is the active fairness mechanism on Adult**, not

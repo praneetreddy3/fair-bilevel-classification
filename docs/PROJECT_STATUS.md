@@ -1,4 +1,4 @@
-# Project Status — Application I: Credit Risk (+ Adult, Law reference)
+# Project Status — Application I: Credit Risk (+ Adult, Law, COMPAS reference)
 
 **Lead:** Praneet Chinthala · **Contributor:** Yanjia (German Credit)
 **Method:** fair bilevel federated classifier (synthetic + Universum + differential privacy).
@@ -18,6 +18,7 @@ of `scripts/run_final.sh`.
 | Default of Credit Card Clients | sex | 0.759 / 0.054 | 0.737 / 0.068 | matches baseline; already-fair baseline |
 | UCI Adult (reference) | sex | 0.845 / 0.019 | 0.696 / 0.069 | small fairness gain, real accuracy cost |
 | Law School (reference paper's own dataset) | race | 0.779 / 0.381 | 0.700 / 0.262 | clearest EO win *vs. its own baseline* (~31% reduction); reference model is still far fairer (see `docs/COMPARISON.md`) |
+| COMPAS recidivism (ProPublica) | race | 0.640 / 0.276 | 0.632 / 0.166 | **best fairness-for-accuracy trade-off of the four** — ~40% EO reduction at <1 point accuracy cost; validation-selected winner has Universum **off** |
 | German Credit *(secondary, single seed)* | foreign worker | 0.700 / 0.174 | 0.615 / 0.299 | EO **worsened**, accuracy dropped |
 
 ## Key findings
@@ -32,6 +33,11 @@ of `scripts/run_final.sh`.
    "Foreign worker" splits the data 96% / 4% — the minority group has only ~28 training samples
    (3 negatives). The method cannot estimate or equalise a group-level true-positive rate from so
    few points, so the EO gap is unstable and worsens. This is a data limitation, not a bug.
+4. **COMPAS is the strongest fairness result in the whole project.** A genuinely unfair
+   baseline (EO 0.276, the well-documented COMPAS racial bias) gets a ~40% EO reduction at
+   under 1 point of accuracy cost — and the validation sweep picked Universum **off** here,
+   a third distinct data point (after Adult: helps, Credit: hurts) showing the Universum
+   mechanism's effect is genuinely dataset-dependent, not a fixed on/off switch.
 
 ## Suggestions and next steps (and why)
 
@@ -50,24 +56,22 @@ of `scripts/run_final.sh`.
 
 ## One-line status
 
-The pipeline runs cleanly across three credit-style datasets and its fairness behaviour is now
-well understood; the immediate work is choosing sensible sensitive attributes (balanced groups),
-applying the calibration fix everywhere, and adding model capacity to lift pipeline accuracy.
+The pipeline runs cleanly across four real-world datasets (Credit, Adult, Law, COMPAS) with
+well-understood, honestly-reported fairness behaviour — including one clear win (COMPAS);
+remaining open work is German Credit's sensitive-attribute choice and, optionally, closing
+the accuracy gap on Adult with added model capacity.
 
-## In progress: COMPAS (4th real-life application)
+## Done: COMPAS (4th real-life application)
 
-`pipeline/load_compas.py` is wired in (`--data compas --sensitive race`, ProPublica's
-"Two Years" recidivism dataset, Caucasian=1/African-American=0, standard AIF360-style
-filtering). A quick sklearn sanity check on the loader gives acc=0.657, EO_gap=0.263 with
-TPR_African-American=0.651 vs TPR_Caucasian=0.388 — consistent with the well-documented
-literature finding on this dataset.
+`pipeline/load_compas.py` loads ProPublica's "Two Years" recidivism dataset
+(Caucasian=1/African-American=0, standard AIF360-style filtering). Best settings were
+picked the same principled way as credit/adult/law's `scripts/fair_comparison.py`:
+`scripts/compas_sweep.py` swept rho x Universum on/off x 5 seeds (50 runs) and selected
+the config maximising validation accuracy subject to validation EO_gap <= 0.1, never
+looking at test numbers. Winner: `rho=0.01`, Universum **off**.
 
-"Best settings" are picked the same principled way as credit/adult/law's
-`scripts/fair_comparison.py`: run `python scripts/compas_sweep.py` (needs PyTorch) — it
-sweeps rho x Universum on/off x 5 seeds (50 runs), selects the config that maximises
-validation accuracy subject to validation EO_gap <= 0.1 (never looks at test numbers),
-and writes that winner's 5 seeds directly to `outputs/draft_results_compas_final_seed{1..5}.json`
-(no separate final run needed — those seeds are already computed during the sweep). It also
-prints the exact CLI flags to paste into `scripts/run_final.sh`'s COMPAS section for the
-record. Then: `python build_tables.py && python plot_final_results.py && python verify.py`
-to fold the results into the tables/figures and confirm nothing broke.
+Result: baseline 0.640 acc / 0.276 EO -> pipeline 0.632 acc / 0.166 EO — a ~40% EO
+reduction at under 1 point of accuracy cost, the best fairness-for-accuracy trade-off of
+the four datasets. Verified reproducible: `python verify.py` — 6/6 checks pass on the
+full repo including this addition. Full numbers: `docs/RESULTS.md`; sweep grid:
+`outputs/tables/compas_sweep.csv`.
