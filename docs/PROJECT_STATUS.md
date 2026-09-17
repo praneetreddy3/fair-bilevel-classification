@@ -60,8 +60,14 @@ applying the calibration fix everywhere, and adding model capacity to lift pipel
 "Two Years" recidivism dataset, Caucasian=1/African-American=0, standard AIF360-style
 filtering). A quick sklearn sanity check on the loader gives acc=0.657, EO_gap=0.263 with
 TPR_African-American=0.651 vs TPR_Caucasian=0.388 — consistent with the well-documented
-literature finding on this dataset. `scripts/run_final.sh` now includes a 5-seed COMPAS
-block; the actual bilevel training run (needs PyTorch) still needs to happen locally —
-run `bash scripts/run_final.sh` (or just the COMPAS block in it) and then
-`python build_tables.py && python plot_final_results.py` to fold the results into the
-tables/figures.
+literature finding on this dataset.
+
+"Best settings" are picked the same principled way as credit/adult/law's
+`scripts/fair_comparison.py`: run `python scripts/compas_sweep.py` (needs PyTorch) — it
+sweeps rho x Universum on/off x 5 seeds (50 runs), selects the config that maximises
+validation accuracy subject to validation EO_gap <= 0.1 (never looks at test numbers),
+and writes that winner's 5 seeds directly to `outputs/draft_results_compas_final_seed{1..5}.json`
+(no separate final run needed — those seeds are already computed during the sweep). It also
+prints the exact CLI flags to paste into `scripts/run_final.sh`'s COMPAS section for the
+record. Then: `python build_tables.py && python plot_final_results.py && python verify.py`
+to fold the results into the tables/figures and confirm nothing broke.
