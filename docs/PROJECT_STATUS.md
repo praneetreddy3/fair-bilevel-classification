@@ -53,3 +53,15 @@ of `scripts/run_final.sh`.
 The pipeline runs cleanly across three credit-style datasets and its fairness behaviour is now
 well understood; the immediate work is choosing sensible sensitive attributes (balanced groups),
 applying the calibration fix everywhere, and adding model capacity to lift pipeline accuracy.
+
+## In progress: COMPAS (4th real-life application)
+
+`pipeline/load_compas.py` is wired in (`--data compas --sensitive race`, ProPublica's
+"Two Years" recidivism dataset, Caucasian=1/African-American=0, standard AIF360-style
+filtering). A quick sklearn sanity check on the loader gives acc=0.657, EO_gap=0.263 with
+TPR_African-American=0.651 vs TPR_Caucasian=0.388 — consistent with the well-documented
+literature finding on this dataset. `scripts/run_final.sh` now includes a 5-seed COMPAS
+block; the actual bilevel training run (needs PyTorch) still needs to happen locally —
+run `bash scripts/run_final.sh` (or just the COMPAS block in it) and then
+`python build_tables.py && python plot_final_results.py` to fold the results into the
+tables/figures.
