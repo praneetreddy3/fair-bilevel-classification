@@ -1,0 +1,42 @@
+% ===== Results tables (Application I: credit-risk, tabular) =====
+% Auto-generated from outputs/tables/*.csv.
+
+\begin{table}[t]\centering
+\caption{Our method vs.\ the reference (FairSynData) on the credit-risk application. Our numbers are 5-seed mean $\pm$ std at validation-selected configurations; reference numbers are a single run. Lower EO gap is fairer.}
+\label{tab:comparison}
+\begin{tabular}{l cc cc}
+\hline
+ & \multicolumn{2}{c}{Our method} & \multicolumn{2}{c}{Reference (FairSynData)} \\
+Dataset & Accuracy & EO gap & Accuracy & EO gap \\ \hline
+Adult & $0.7471 \pm 0.0129$ & $0.0728 \pm 0.0545$ & $0.7738$ & $0.1192$ \\
+Credit & $0.7679 \pm 0.0174$ & $0.0347 \pm 0.0210$ & $0.7445$ & $0.0098$ \\
+Law & $0.6872 \pm 0.0312$ & $0.2402 \pm 0.0660$ & $0.8438$ & $0.0849$ \\
+\hline\end{tabular}\end{table}
+
+\begin{table*}[t]\centering
+\caption{Predictive performance of the baseline (ERM) and our pipeline (5-seed mean $\pm$ std, fixed configuration).}
+\label{tab:performance}
+\resizebox{\textwidth}{!}{\begin{tabular}{l l cccccc}
+\hline
+Dataset & Model & Accuracy & F1 & Macro-F1 & Bal.\ Acc. & ROC-AUC & PR-AUC \\ \hline
+Credit & baseline & $0.7594 \pm 0.0202$ & $0.4958 \pm 0.0041$ & $0.6219 \pm 0.0016$ & $0.6049 \pm 0.0012$ & $0.7073 \pm 0.0008$ & $0.4946 \pm 0.0011$ \\
+Credit & pipeline & $0.7372 \pm 0.0229$ & $0.4520 \pm 0.0153$ & $0.5488 \pm 0.0212$ & $0.6159 \pm 0.0095$ & $0.6831 \pm 0.0086$ & $0.4410 \pm 0.0141$ \\
+Adult & baseline & $0.8452 \pm 0.0002$ & $0.6528 \pm 0.0006$ & $0.7766 \pm 0.0003$ & $0.7660 \pm 0.0004$ & $0.8877 \pm 0.0003$ & $0.7410 \pm 0.0005$ \\
+Adult & pipeline & $0.6962 \pm 0.0084$ & $0.5599 \pm 0.0086$ & $0.6639 \pm 0.0073$ & $0.7383 \pm 0.0085$ & $0.8163 \pm 0.0063$ & $0.5613 \pm 0.0088$ \\
+Law & baseline & $0.7786 \pm 0.0144$ & $0.8611 \pm 0.0108$ & $0.6523 \pm 0.0047$ & $0.6150 \pm 0.0039$ & $0.8732 \pm 0.0002$ & $0.9794 \pm 0.0001$ \\
+Law & pipeline & $0.6999 \pm 0.0191$ & $0.8057 \pm 0.0174$ & $0.6162 \pm 0.0208$ & $0.6508 \pm 0.0393$ & $0.7608 \pm 0.0431$ & $0.9578 \pm 0.0112$ \\
+\hline\end{tabular}}\end{table*}
+
+\begin{table}[t]\centering
+\caption{Fairness gaps (5-seed mean $\pm$ std). Lower is fairer.}
+\label{tab:fairness}
+\begin{tabular}{l l ccc}
+\hline
+Dataset & Model & $\Delta_{DP}$ & $\Delta_{EO}$ & $\Delta_{EOD}$ \\ \hline
+Credit & baseline & $0.0235 \pm 0.0016$ & $0.0537 \pm 0.0185$ & $0.0279 \pm 0.0027$ \\
+Credit & pipeline & $0.1246 \pm 0.0352$ & $0.0675 \pm 0.0128$ & $0.1264 \pm 0.0369$ \\
+Adult & baseline & $0.1420 \pm 0.0014$ & $0.0189 \pm 0.0025$ & $0.0526 \pm 0.0014$ \\
+Adult & pipeline & $0.1351 \pm 0.0586$ & $0.0687 \pm 0.0459$ & $0.1116 \pm 0.0309$ \\
+Law & baseline & $0.1908 \pm 0.0053$ & $0.3808 \pm 0.0057$ & $0.4001 \pm 0.0166$ \\
+Law & pipeline & $0.2430 \pm 0.0713$ & $0.2624 \pm 0.0769$ & $0.2324 \pm 0.0934$ \\
+\hline\end{tabular}\end{table}

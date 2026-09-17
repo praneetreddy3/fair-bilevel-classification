@@ -36,7 +36,7 @@ draft_model/        core method (this repo's code)
   server.py            aggregation, global training, metrics, threshold tuning
   dp.py                DP variants: none / pre_server / post_server / both
   notation.py           data structures
-pipeline/            dataset loaders (adult, credit, law, 2d example)
+pipeline/            dataset loaders (adult, credit, law, compas, 2d example)
 scripts/             run_final.sh (final 5-seed runs) + sweep_*.sh (grid search)
 outputs/             result JSONs, figures, outputs/tables/ (T1-T5 CSVs)
 docs/                guides, reports, paper tables (index below)
@@ -45,6 +45,7 @@ build_tables.py       regenerate outputs/tables/T1-T5 + docs/PAPER_TABLES.md
 plot_results.py       regenerate figures from outputs/draft_results_*.json
 CreditData/           credit .xls/.xlsx/.csv goes here — gitignored, not committed
 UCIAdultdataset/      adult.data / adult.test go here — gitignored, not committed
+CompasData/           compas-scores-two-years.csv goes here — gitignored, not committed
 FairSynData/          reference implementation (incl. bundled Law data) — gitignored
 ```
 
@@ -65,6 +66,9 @@ pip install -r requirements.txt
   `.xls`/`.xlsx`/`.csv` in `CreditData/`. `pipeline/load_credit.py` auto-detects the file
   and header row; same `ucimlrepo` fallback if the folder is empty.
 - **Law School**: bundled at `FairSynData/rawdata/law.csv` — no download needed.
+- **COMPAS** (ProPublica recidivism): place `compas-scores-two-years.csv` in `CompasData/`, or
+  just `pip install responsibly` — `pipeline/load_compas.py` falls back to the identical CSV
+  bundled inside that package if the folder is empty.
 
 ## Usage
 
@@ -83,7 +87,8 @@ python -m draft_model.run_draft --data law --sensitive race \
 bash scripts/run_final.sh
 
 # Regenerate figures / paper tables from whatever is in outputs/
-python plot_results.py
+python plot_results.py        # full dev/diagnostic sweep (every logged config)
+python plot_final_results.py  # paper figures: one point per dataset, mean +/- std, 5 seeds
 python build_tables.py
 ```
 
@@ -91,7 +96,7 @@ python build_tables.py
 
 | Flag | Purpose |
 |---|---|
-| `--data {dummy,adult,2d,credit,law}` | dataset |
+| `--data {dummy,adult,2d,credit,law,compas}` | dataset |
 | `--sensitive {sex,race}` | sensitive attribute |
 | `--dp_variant {none,pre_server,post_server,both}` `--dp_sigma` | DP placement / strength |
 | `--rho` `--epsilon_EO` | fairness penalty / tolerance (trade-off knobs) |
@@ -141,6 +146,10 @@ the pipeline cuts that by ~31% (to 0.262) and EOD by ~42% (0.400 → 0.232) at a
 moderate accuracy cost. Ablations confirm the **Universum construction is the active
 fairness mechanism** (removing it clearly worsens EO on both Credit and Adult). Full
 verdict, caveats, and known limitations: `docs/RESULTS.md`.
+
+Figures: `outputs/final_pareto.png` / `outputs/final_bars.png` (clean, one point per
+dataset — use these in the manuscript); `outputs/results_pareto.png` / `results_bars.png`
+are the full dev sweep (every logged config, not paper-ready).
 
 *A secondary German Credit experiment (different sensitive attribute, single seed, run
 by a separate contributor) is not part of the final 3-dataset pipeline above — see

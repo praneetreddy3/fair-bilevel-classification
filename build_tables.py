@@ -23,11 +23,13 @@ WINNER_SINGLE = {
     "credit": "draft_results_credit_final_seed1.json",
     "adult": "draft_results_adult_final_seed1.json",
     "law": "draft_results_law_final_seed1.json",
+    "compas": "draft_results_compas_final_seed1.json",
 }
 WINNER_5SEED = {
     "credit": [f"draft_results_credit_final_seed{s}.json" for s in range(1, 6)],
     "adult": [f"draft_results_adult_final_seed{s}.json" for s in range(1, 6)],
     "law": [f"draft_results_law_final_seed{s}.json" for s in range(1, 6)],
+    "compas": [f"draft_results_compas_final_seed{s}.json" for s in range(1, 6)],
 }
 
 

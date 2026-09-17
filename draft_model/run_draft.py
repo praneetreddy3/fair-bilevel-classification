@@ -2,7 +2,7 @@
 Main pipeline runner: data → clients → minibatch → synthetic → Universum → bilevel AL → server.
 Evaluates both a baseline (ERM) and the fairness-aware pipeline on the test set.
 
-Usage: python -m draft_model.run_draft --data {dummy,adult,2d} [options]
+Usage: python -m draft_model.run_draft --data {dummy,adult,2d,credit,law,compas} [options]
 """
 import os
 # Determinism: pin BLAS / OpenMP thread pools to a single thread BEFORE numpy or torch are
@@ -89,6 +89,12 @@ def load_law_data(sensitive: str = "race"):
     return prepare_law_for_draft(sensitive=sensitive)
 
 
+def load_compas_data(sensitive: str = "race"):
+    """Load the ProPublica COMPAS recidivism dataset. Sensitive = race (only option)."""
+    from pipeline.load_compas import prepare_compas_for_draft
+    return prepare_compas_for_draft(sensitive=sensitive)
+
+
 def dirichlet_partition_indices(Y: np.ndarray, num_clients: int, alpha: float, rng: np.random.Generator) -> list:
     """Label-skew non-IID client partition (standard FL recipe, e.g. Hsu et al. 2019).
 
@@ -115,7 +121,7 @@ def main():
     write results JSON to out_dir.
     """
     parser = argparse.ArgumentParser(description="Run the fair bilevel pipeline.")
-    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit", "law"])
+    parser.add_argument("--data", default="dummy", choices=["dummy", "adult", "2d", "credit", "law", "compas"])
     parser.add_argument("--sensitive", default="sex", choices=["sex", "race"])
     parser.add_argument("--num_clients", type=int, default=3)
     parser.add_argument("--partition", choices=["iid", "dirichlet"], default="iid",
@@ -196,6 +202,8 @@ def main():
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_credit_data(sensitive=args.sensitive)
     elif args.data == "law":
         (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_law_data(sensitive=args.sensitive)
+    elif args.data == "compas":
+        (X_train, A_train, Y_train), (X_test, A_test, Y_test) = load_compas_data(sensitive=args.sensitive)
     else:
         raise ValueError(args.data)
 

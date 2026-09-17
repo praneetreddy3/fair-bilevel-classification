@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Final results: our model on Adult, Credit, and Law — best per-dataset settings, 5 seeds each.
+# Final results: our model on Adult, Credit, Law, and COMPAS — best per-dataset settings, 5 seeds each.
 # Run from the repo root:  bash scripts/run_final.sh
-# Requires PyTorch + the datasets (CreditData/ for credit; law is bundled in FairSynData/rawdata/).
+# Requires PyTorch + the datasets (CreditData/ for credit; law is bundled in FairSynData/rawdata/;
+# compas needs CompasData/compas-scores-two-years.csv, or `pip install responsibly` as a fallback
+# source for the same file — see pipeline/load_compas.py).
 set -u
 SEEDS="1 2 3 4 5"
 COMMON="--num_clients 5 --rounds 8 --K_inner 100 --deterministic true"
@@ -28,6 +30,14 @@ for s in $SEEDS; do
     --add_intercept true --tune_threshold true \
     --dp_variant none --rho 0.1 --epsilon_EO 0.1 --seed $s $COMMON \
     --results_file draft_results_law_final_seed$s.json
+done
+
+echo "===== COMPAS (recidivism; race sensitive attr, intercept + threshold ON) ====="
+for s in $SEEDS; do
+  python -m draft_model.run_draft --data compas --sensitive race \
+    --add_intercept true --tune_threshold true \
+    --dp_variant none --rho 0.1 --epsilon_EO 0.1 --seed $s $COMMON \
+    --results_file draft_results_compas_final_seed$s.json
 done
 
 echo "===== Rebuild tables + figures ====="
