@@ -1,0 +1,18 @@
+# Normalize line endings so Windows checkouts don't produce spurious
+# whole-file diffs on outputs/*.json, *.csv, etc.
+* text=auto eol=lf
+
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.tex text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.xls binary
+*.xlsx binary
