@@ -17,6 +17,8 @@ env/
 
 # Generated outputs (keep key results, ignore intermediate files)
 outputs/archive/
+outputs/fig_data.json
+outputs/results_convergence_interactive.html
 
 # Archived legacy scripts (kept locally, not needed on GitHub)
 archive/

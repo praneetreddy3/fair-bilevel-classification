@@ -4,7 +4,8 @@ Reusable results plotter.
 Scans outputs/draft_results_*.json (whatever configs you've run) and regenerates:
   - outputs/results_pareto.png      accuracy vs EO gap, baseline as a star, best = top-left
   - outputs/results_bars.png        baseline vs pipeline accuracy & EO gap per config
-  - outputs/results_convergence.png val accuracy / EO gap per round (if round_logs present)
+  - outputs/results_convergence_accuracy.png val accuracy per round (if round_logs present)
+  - outputs/results_convergence_eo_gap.png   val EO gap per round (if round_logs present)
 
 Run after any re-run:   python plot_results.py
 No hardcoded experiment pairs — it just plots whatever JSONs are in outputs/.
@@ -93,23 +94,73 @@ def plot_bars(runs):
     plt.close()
 
 
+def _label_lines_on_right(fig, ax, end_x, end_y, end_labels, end_colors, fontsize=6):
+    """Annotate each line's final value with its name on the right margin,
+    spacing labels apart so they don't overlap while keeping a thin leader
+    line back to the true final value."""
+    fig.canvas.draw()
+    bbox_px = ax.get_window_extent()
+    ylim = ax.get_ylim()
+    px_per_data = bbox_px.height / (ylim[1] - ylim[0])
+    min_gap = (fontsize * 1.6 * fig.dpi / 72) / px_per_data
+
+    order = sorted(range(len(end_y)), key=lambda i: end_y[i])
+    label_y = [end_y[i] for i in order]
+    for i in range(1, len(label_y)):
+        if label_y[i] - label_y[i - 1] < min_gap:
+            label_y[i] = label_y[i - 1] + min_gap
+    for i in range(len(label_y) - 2, -1, -1):
+        if label_y[i + 1] - label_y[i] < min_gap:
+            label_y[i] = label_y[i + 1] - min_gap
+    label_y_by_idx = {i: y for i, y in zip(order, label_y)}
+
+    for i in range(len(end_labels)):
+        ax.annotate(
+            end_labels[i], xy=(end_x[i], end_y[i]), xycoords="data",
+            xytext=(1.02, label_y_by_idx[i]), textcoords=("axes fraction", "data"),
+            fontsize=fontsize, color=end_colors[i], va="center", ha="left",
+            arrowprops=dict(arrowstyle="-", color=end_colors[i], lw=0.5, shrinkA=0, shrinkB=2),
+            annotation_clip=False,
+        )
+
+
 def plot_convergence(runs):
     runs = [r for r in runs if r["round_logs"]]
     if not runs:
         return
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
+
+    fig, a1 = plt.subplots(figsize=(9, max(5, 0.16 * len(runs))))
+    end_x, end_y, end_labels, end_colors = [], [], [], []
     for r in runs:
         rounds = [x["round"] for x in r["round_logs"]]
-        a1.plot(rounds, [x.get("val_accuracy", np.nan) * 100 for x in r["round_logs"]],
-                marker="o", label=f'{r["dataset"]}:{r["label"]}')
-        a2.plot(rounds, [x.get("val_EO_gap", np.nan) * 100 for x in r["round_logs"]],
-                marker="o", label=f'{r["dataset"]}:{r["label"]}')
+        acc = [x.get("val_accuracy", np.nan) * 100 for x in r["round_logs"]]
+        line, = a1.plot(rounds, acc, marker="o")
+        end_x.append(rounds[-1])
+        end_y.append(acc[-1])
+        end_labels.append(f'{r["dataset"]}:{r["label"]}')
+        end_colors.append(line.get_color())
     a1.set_title("Validation accuracy per round", fontweight="bold")
-    a1.set_xlabel("round"); a1.set_ylabel("accuracy (%)"); a1.grid(alpha=0.3); a1.legend(fontsize=7)
-    a2.set_title("Validation EO gap per round", fontweight="bold")
-    a2.set_xlabel("round"); a2.set_ylabel("EO gap (%)"); a2.grid(alpha=0.3); a2.legend(fontsize=7)
+    a1.set_xlabel("round"); a1.set_ylabel("accuracy (%)"); a1.grid(alpha=0.3)
+    _label_lines_on_right(fig, a1, end_x, end_y, end_labels, end_colors)
     plt.tight_layout()
-    plt.savefig(os.path.join(OUT, "results_convergence.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(OUT, "results_convergence_accuracy.png"), dpi=300, bbox_inches="tight")
+    plt.close()
+
+    fig, a2 = plt.subplots(figsize=(9, max(5, 0.16 * len(runs))))
+    end_x, end_y, end_labels, end_colors = [], [], [], []
+    for r in runs:
+        rounds = [x["round"] for x in r["round_logs"]]
+        eo = [x.get("val_EO_gap", np.nan) * 100 for x in r["round_logs"]]
+        line, = a2.plot(rounds, eo, marker="o")
+        end_x.append(rounds[-1])
+        end_y.append(eo[-1])
+        end_labels.append(f'{r["dataset"]}:{r["label"]}')
+        end_colors.append(line.get_color())
+    a2.set_title("Validation EO gap per round", fontweight="bold")
+    a2.set_xlabel("round"); a2.set_ylabel("EO gap (%)"); a2.grid(alpha=0.3)
+    _label_lines_on_right(fig, a2, end_x, end_y, end_labels, end_colors)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT, "results_convergence_eo_gap.png"), dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -120,4 +171,4 @@ if __name__ == "__main__":
     else:
         plot_pareto(runs); plot_bars(runs); plot_convergence(runs)
         print(f"Plotted {len(runs)} run(s). Figures saved in {OUT}/:")
-        print("  results_pareto.png, results_bars.png, results_convergence.png")
+        print("  results_pareto.png, results_bars.png, results_convergence_accuracy.png, results_convergence_eo_gap.png")
