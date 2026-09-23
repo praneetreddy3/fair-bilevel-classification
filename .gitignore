@@ -41,3 +41,8 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Modified copies of FairSynData source — not redistributed (no licence upstream).
+# The changes are specified in reference_setup/CHANGES.md instead.
+reference_setup/mycodes/
+reference_setup/mydatasets/DatasetFactory.py
