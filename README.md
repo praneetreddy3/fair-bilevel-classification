@@ -159,8 +159,9 @@ dataset — use these in the manuscript); `outputs/results_pareto.png` / `result
 are the full dev sweep (every logged config, not paper-ready).
 
 *A secondary German Credit experiment (different sensitive attribute, single seed, run
-by a separate contributor) is not part of the final 3-dataset pipeline above — see
-`docs/PROJECT_STATUS.md` for that result and why it's reported separately.*
+by a separate contributor) is not part of the final 4-dataset comparison above — see the
+"German Credit (secondary, single seed)" section in `docs/RESULTS.md` for that result and
+why it's reported separately.*
 
 ## Reproducibility
 
@@ -183,12 +184,9 @@ threaded through the same seeded `numpy.random.Generator`.
 
 | File | What it's for |
 |---|---|
-| `docs/RESULTS.md` | Final calibrated 5-seed results (Adult/Credit/Law), verdict, and caveats. |
+| `docs/RESULTS.md` | Final calibrated 5-seed results (Credit/Adult/Law/COMPAS), verdict, and caveats — including the secondary German Credit run. |
+| `docs/RESULTS_KIT.md` | Manuscript-ready results: our method vs. its own baseline and vs. the reference (FairSynData) model, plus the figure guide. |
 | `docs/PAPER_TABLES.md` | The five paper tables (T1-T5) with per-config numbers. |
-| `docs/PROJECT_STATUS.md` | Status snapshot across datasets, including the secondary German Credit run. |
-| `docs/ALL_IN_ONE_GUIDE.md` | One-stop: strategy, results, run commands. |
-| `docs/CREDIT_RISK_RUNBOOK.md` | Credit Risk: datasets, scenarios, method rationale. |
-| `docs/ENHANCEMENT_GUIDE.md` | How to raise accuracy: levers, constants, the MLP upgrade path. |
-| `docs/CHANGES.md` | Changelog against earlier repo states. |
-| `docs/STATUS_REPORT.md` | Dated single-seed milestone report (historical). |
-| `docs/PROJECT_GUIDE.md`, `docs/WORKFLOW.md` | Method walkthrough + architecture reference. |
+| `docs/COMPARISON.md` | Full our-method-vs-reference-model comparison, convergence investigation, and the two data-prep bugs found/fixed in the reference setup. |
+| `docs/COMPAS_APPLICATION.md` | Professor-facing summary of the 4th application (COMPAS): what it is, why it was added, results. |
+| `docs/CHANGES.md` | Changelog against earlier repo states, with a "how to verify the code is correct" checklist. |
