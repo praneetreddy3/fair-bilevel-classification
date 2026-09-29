@@ -170,3 +170,67 @@ def compute_extended_metrics(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y:
         "DP_gap": dp_gap,
         "EOD_gap": eod_gap,
     }
+
+
+def compute_group_rates(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
+                        threshold: float = 0.0) -> dict:
+    """Per-group TPR and FPR (item: 'report per-group TPR/FPR')."""
+    Xa = np.hstack([X, A.reshape(-1, 1)])
+    pred = (Xa @ theta > threshold).astype(np.float64)
+    out = {}
+    for s in (0, 1):
+        mask_s = A == s
+        pos = mask_s & (Y == 1)
+        neg = mask_s & (Y == 0)
+        out[f"TPR_group{s}"] = float(np.mean(pred[pos])) if np.any(pos) else None
+        out[f"FPR_group{s}"] = float(np.mean(pred[neg])) if np.any(neg) else None
+        out[f"n_group{s}"] = int(np.sum(mask_s))
+    return out
+
+
+def local_vs_pooled_eo(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
+                       num_clients: int, dirichlet_alpha: float, threshold: float = 0.0,
+                       seed: int = 0) -> dict:
+    """Non-IID diagnostic (checklist item: 'compare local and pooled EO under controlled
+    non-IID partitions'). Partitions a held-out set into `num_clients` non-IID shards via
+    label-skew Dirichlet partitioning (same recipe as training partitioning), evaluates
+    the already-trained global `theta` separately on each shard (local EO/TPR/FPR) and on
+    the full pooled set (pooled EO/TPR/FPR), so the two can be compared side by side.
+
+    This is a post-hoc diagnostic on the fixed global theta -- it does not retrain
+    per-client models; it asks whether one shared theta's fairness looks the same when
+    viewed per-shard as when viewed on the pooled whole.
+    """
+    from .run_draft import dirichlet_partition_indices  # local import: avoids a cycle at module load
+
+    rng = np.random.default_rng(seed)
+    pooled_gap, tpr0, tpr1, pooled_acc, pooled_f1 = compute_eo_gap_and_accuracy(
+        theta, X, A, Y, threshold=threshold
+    )
+    pooled_rates = compute_group_rates(theta, X, A, Y, threshold=threshold)
+
+    client_indices = dirichlet_partition_indices(Y, num_clients, dirichlet_alpha, rng)
+    per_client = []
+    for k, idx in enumerate(client_indices):
+        if len(idx) == 0:
+            per_client.append({"client": k, "n": 0, "EO_gap": None})
+            continue
+        Xk, Ak, Yk = X[idx], A[idx], Y[idx]
+        gap_k, tpr0_k, tpr1_k, acc_k, f1_k = compute_eo_gap_and_accuracy(
+            theta, Xk, Ak, Yk, threshold=threshold
+        )
+        rates_k = compute_group_rates(theta, Xk, Ak, Yk, threshold=threshold)
+        per_client.append({
+            "client": k, "n": int(len(idx)), "EO_gap": gap_k, "accuracy": acc_k, "F1": f1_k,
+            **rates_k,
+        })
+
+    valid_gaps = [c["EO_gap"] for c in per_client if c["EO_gap"] is not None]
+    return {
+        "num_clients": num_clients,
+        "dirichlet_alpha": dirichlet_alpha,
+        "pooled": {"EO_gap": pooled_gap, "accuracy": pooled_acc, "F1": pooled_f1, **pooled_rates},
+        "per_client": per_client,
+        "mean_local_EO_gap": float(np.mean(valid_gaps)) if valid_gaps else None,
+        "max_local_EO_gap": float(np.max(valid_gaps)) if valid_gaps else None,
+    }

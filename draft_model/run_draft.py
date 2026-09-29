@@ -162,6 +162,11 @@ def main():
     parser.add_argument("--dp_variant", choices=DP_VARIANTS, default="post_server")
     parser.add_argument("--stop_criterion", choices=["eo_gap", "grad_inf"], default="eo_gap")
     parser.add_argument("--outer_tol_xhat", type=float, default=1e-6)
+    parser.add_argument("--report_client_eo", type=str2bool, default=False,
+                         help="Attach a local-vs-pooled EO diagnostic to the results JSON: "
+                              "partitions the test set non-IID (Dirichlet, same alpha/clients "
+                              "as training) and compares each shard's EO gap/TPR/FPR to the "
+                              "pooled (whole-test-set) EO gap using the trained global theta.")
     parser.add_argument("--eo_surrogate", choices=["tpr_gap", "score_gap"], default="tpr_gap",
                          help="EO training surrogate: 'tpr_gap' (shipped/original, smooth "
                               "|TPR_1-TPR_0|) or 'score_gap' (paper-revision proposal, signed "
@@ -352,6 +357,22 @@ def main():
     extended_pipeline = compute_extended_metrics(theta_glob, X_test, A_test, Y_test)
     extended_baseline = compute_extended_metrics(theta_baseline, X_test, A_test, Y_test)
 
+    non_iid_eo_check = None
+    if args.report_client_eo:
+        from draft_model.server import local_vs_pooled_eo
+        non_iid_eo_check = local_vs_pooled_eo(
+            theta_glob, X_test, A_test, Y_test,
+            num_clients=args.num_clients, dirichlet_alpha=args.dirichlet_alpha,
+            threshold=thr_pipe, seed=args.seed,
+        )
+
+    dp_privacy_budget = None
+    if dp_cfg.is_enabled():
+        from draft_model.dp import report_privacy_budget
+        dp_privacy_budget = report_privacy_budget(
+            dp_cfg, d=d_plus_1, num_rounds=args.rounds, num_clients=args.num_clients,
+        )
+
     results = {
         "baseline": {
             "accuracy": acc_baseline, "F1_score": f1_baseline, "EO_gap": eo_baseline,
@@ -380,10 +401,16 @@ def main():
             "threshold_pipeline": thr_pipe,
             "threshold_baseline": thr_base,
             "extended_metrics": extended_pipeline,
+            "eo_surrogate": args.eo_surrogate,
+            "universum_mode": args.universum_mode,
         },
         "dataset": args.data,
         "round_logs": round_logs,
     }
+    if non_iid_eo_check is not None:
+        results["non_iid_eo_check"] = non_iid_eo_check
+    if dp_privacy_budget is not None:
+        results["dp_privacy_budget"] = dp_privacy_budget
 
     out_path = os.path.join(out_dir, args.results_file)
     with open(out_path, "w") as f:

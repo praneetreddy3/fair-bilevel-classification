@@ -86,3 +86,73 @@ def apply_post_server_dp(X_agg: np.ndarray, cfg: DPConfig, rng: Optional[np.rand
     if not cfg.use_post_server():
         return X_agg
     return _noisify_features(X_agg, cfg, rng)
+
+
+def analytic_gaussian_epsilon(sigma: float, clip_min: float, clip_max: float,
+                              d: int, delta: float = 1e-5) -> float:
+    """Single-release (epsilon, delta) for the Gaussian mechanism used in _noisify_features.
+
+    Sensitivity: one client's feature row changing (the standard "remove/replace one
+    record" neighboring-dataset definition) can move the released vector by at most the
+    L2 diameter of the per-dimension clip box, i.e. sqrt(d) * (clip_max - clip_min).
+    Uses the standard analytic Gaussian-mechanism bound:
+        epsilon = (sensitivity / sigma) * sqrt(2 * ln(1.25 / delta))
+    This is the textbook (Dwork & Roth) bound, not the tighter numeric/moments-accountant
+    analysis -- adequate for reporting a defensible order-of-magnitude budget, not a
+    publication-grade tight accountant.
+    """
+    if sigma <= 0:
+        return float("inf")
+    sensitivity = np.sqrt(d) * (clip_max - clip_min)
+    return float((sensitivity / sigma) * np.sqrt(2.0 * np.log(1.25 / delta)))
+
+
+def composed_epsilon_basic(epsilon_per_release: float, num_releases: int) -> float:
+    """Basic (linear, non-tight) composition: epsilon_total = num_releases * epsilon_per_release.
+
+    Reported alongside the tighter advanced-composition bound for context; basic
+    composition always upper-bounds the true privacy loss, so it is a safe (if loose)
+    number to quote.
+    """
+    return float(epsilon_per_release * num_releases)
+
+
+def composed_epsilon_advanced(epsilon_per_release: float, num_releases: int,
+                              delta_prime: float = 1e-5) -> float:
+    """Advanced composition (Dwork, Rothblum, Vadhan 2010 style) bound:
+        epsilon_total ~= sqrt(2*k*ln(1/delta')) * epsilon + k*epsilon*(e^epsilon - 1)
+    where k = num_releases. Tighter than basic composition for many releases.
+    """
+    k = num_releases
+    eps = epsilon_per_release
+    return float(np.sqrt(2.0 * k * np.log(1.0 / delta_prime)) * eps + k * eps * (np.exp(eps) - 1.0))
+
+
+def report_privacy_budget(cfg: DPConfig, d: int, num_rounds: int, num_clients: int,
+                          delta: float = 1e-5) -> dict:
+    """Full budget summary for a T-round, K-client run releasing one noised payload
+    per client per round (T*K total releases under pre_server DP; K under post_server;
+    T*K + K under both -- see cfg.variant)."""
+    if not cfg.is_enabled():
+        return {"enabled": False}
+    eps1 = analytic_gaussian_epsilon(cfg.sigma, cfg.clip_min, cfg.clip_max, d, delta=delta)
+    if cfg.variant == "pre_server":
+        k = num_rounds * num_clients
+    elif cfg.variant == "post_server":
+        k = num_rounds
+    else:  # "both"
+        k = num_rounds * num_clients + num_rounds
+    return {
+        "enabled": True,
+        "variant": cfg.variant,
+        "sigma": cfg.sigma,
+        "clip_range": [cfg.clip_min, cfg.clip_max],
+        "delta": delta,
+        "epsilon_per_release": eps1,
+        "num_releases": k,
+        "epsilon_basic_composition": composed_epsilon_basic(eps1, k),
+        "epsilon_advanced_composition": composed_epsilon_advanced(eps1, k, delta_prime=delta),
+        "note": "Analytic Gaussian-mechanism bound (Dwork & Roth), not a tight moments "
+                "accountant; basic composition is a safe upper bound, advanced composition "
+                "is tighter for large num_releases.",
+    }
