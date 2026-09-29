@@ -46,12 +46,26 @@ def L_base(theta: torch.Tensor, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
 
 
 def L_universum(theta: torch.Tensor, X: np.ndarray, A: np.ndarray,
-                lambda_U: float, Delta_s: float) -> torch.Tensor:
-    """Eq. 3: Universum loss — encourages θ to classify U points as positive (y=1)."""
+                lambda_U: float, Delta_s: float,
+                mode: str = "logistic_pseudo_positive",
+                tau: float = 0.0) -> torch.Tensor:
+    """Universum loss.
+
+    mode="logistic_pseudo_positive" (default, original/shipped behavior, Eq. 3):
+      encourages theta to classify U points as positive (y=1). Matches the actual
+      midpoint-of-positive-and-negative construction in minibatch_design.py.
+
+    mode="hinge_shield" (new, per the draft's description): one-sided hinge that only
+      penalizes U points that land on the majority (score > tau) side, i.e.
+      L_U = mean(max(f_theta(u) - tau, 0)). Does not require a y=1 target.
+    """
     if Delta_s <= 0 or len(X) == 0:
         return torch.tensor(0.0, device=theta.device)
     Xa = pack_xa(X, A).to(theta.device)
     logits = f_theta(theta, Xa)
+    if mode == "hinge_shield":
+        loss_u = torch.clamp(logits - tau, min=0.0).mean()
+        return lambda_U * loss_u
     y_one = torch.ones(Xa.shape[0], device=theta.device)
     loss_u = logistic_loss_per_sample(y_one, logits).mean()
     return lambda_U * loss_u
@@ -101,6 +115,35 @@ def compute_tpr_gap_surrogate(
     return torch.sqrt(diff * diff + 1e-12)
 
 
+def compute_score_gap_surrogate(
+    theta: torch.Tensor,
+    X: np.ndarray,
+    A: np.ndarray,
+    Y: np.ndarray,
+) -> torch.Tensor:
+    """
+    Alternative EO surrogate proposed in the paper's revised draft: the unnormalized
+    qualified mean-score gap g_EO = mu_1 - mu_0, where mu_s = mean(f_theta(x,s) | Y=1, A=s).
+
+    Derivation note (from the draft): the Zafar-style covariance surrogate equals
+    c_EO = p_bar*(1-p_bar)*(mu_1-mu_0), so it silently attenuates when one group is rare
+    among the qualified population (p_bar -> 0 or 1). g_EO = mu_1-mu_0 removes that
+    attenuation. Unlike compute_tpr_gap_surrogate, this is NOT passed through a sigmoid/
+    threshold -- it is a raw mean-score difference, signed (not absolute value).
+    """
+    y = np.asarray(Y)
+    a = np.asarray(A)
+    mask1 = (y == 1) & (a == 1)
+    mask0 = (y == 1) & (a == 0)
+    if not np.any(mask1) or not np.any(mask0):
+        return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
+    Xa1 = pack_xa(np.asarray(X)[mask1], a[mask1]).to(theta.device)
+    Xa0 = pack_xa(np.asarray(X)[mask0], a[mask0]).to(theta.device)
+    mu1 = f_theta(theta, Xa1).mean()
+    mu0 = f_theta(theta, Xa0).mean()
+    return mu1 - mu0
+
+
 def g_EO(
     theta: torch.Tensor,
     X: np.ndarray,
@@ -108,10 +151,17 @@ def g_EO(
     Y: np.ndarray,
     tau: float = 0.0,
     alpha: float = 10.0,
+    surrogate: str = "tpr_gap",
 ) -> torch.Tensor:
-    """EO surrogate wrapper (TPR-gap, smooth)."""
+    """EO surrogate wrapper.
+
+    surrogate="tpr_gap" (default, original/shipped behavior): smooth |TPR_1-TPR_0|.
+    surrogate="score_gap" (new, per the revised draft): signed mu_1-mu_0, no sigmoid/threshold.
+    """
     if len(Y) == 0 or not np.any(np.asarray(Y) == 1):
         return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
+    if surrogate == "score_gap":
+        return compute_score_gap_surrogate(theta, X, A, Y)
     return compute_tpr_gap_surrogate(theta, X, A, Y, tau=tau, alpha=alpha)
 
 

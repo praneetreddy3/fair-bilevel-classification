@@ -162,6 +162,15 @@ def main():
     parser.add_argument("--dp_variant", choices=DP_VARIANTS, default="post_server")
     parser.add_argument("--stop_criterion", choices=["eo_gap", "grad_inf"], default="eo_gap")
     parser.add_argument("--outer_tol_xhat", type=float, default=1e-6)
+    parser.add_argument("--eo_surrogate", choices=["tpr_gap", "score_gap"], default="tpr_gap",
+                         help="EO training surrogate: 'tpr_gap' (shipped/original, smooth "
+                              "|TPR_1-TPR_0|) or 'score_gap' (paper-revision proposal, signed "
+                              "mu_1-mu_0, no sigmoid/threshold).")
+    parser.add_argument("--universum_mode", choices=["logistic_pseudo_positive", "hinge_shield"],
+                         default="logistic_pseudo_positive",
+                         help="Universum loss: 'logistic_pseudo_positive' (shipped/original, "
+                              "trains U points toward y=1) or 'hinge_shield' (paper-revision "
+                              "proposal, one-sided hinge penalizing majority-side U points).")
     parser.add_argument("--deterministic", type=str2bool, default=True,
                          help="Pin single-thread + deterministic torch ops so identical seeds give "
                               "identical results (fixes pipeline non-determinism). Set false for speed.")
@@ -283,6 +292,8 @@ def main():
                     use_rolling_buffer=args.use_rolling_buffer,
                     stop_criterion=args.stop_criterion,
                     outer_tol_xhat=args.outer_tol_xhat,
+                    eo_surrogate=args.eo_surrogate,
+                    universum_mode=args.universum_mode,
                 )
                 Ds_send = SyntheticMinibatch(
                     X=X_ds_new, A=Ds.A, Y=Ds.Y,

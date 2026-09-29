@@ -113,6 +113,8 @@ def client_round_al(
     w_clip: float = 10.0,
     stop_criterion: str = "eo_gap",
     outer_tol_xhat: float = 1e-6,
+    eo_surrogate: str = "tpr_gap",
+    universum_mode: str = "logistic_pseudo_positive",
 ):
     """
     Full bilevel AL solver for one client round (Algorithm 1).
@@ -176,7 +178,10 @@ def client_round_al(
 
             if n_u > 0 and Ds.Delta_s > 0:
                 logits_u = (Xa_u @ theta).squeeze(-1)
-                loss_u = torch.log(1 + torch.exp(-logits_u.clamp(min=-50))).mean()
+                if universum_mode == "hinge_shield":
+                    loss_u = torch.clamp(logits_u - tpr_tau, min=0.0).mean()
+                else:
+                    loss_u = torch.log(1 + torch.exp(-logits_u.clamp(min=-50))).mean()
                 Lin_inner = Lin_inner + lambda_U * loss_u
 
             Lin_inner.backward()
@@ -204,6 +209,7 @@ def client_round_al(
             theta_star, B_X_fair, B_A_fair, B_Y_fair,
             tau=tpr_tau if use_tpr_gap else 0.0,
             alpha=tpr_alpha if use_tpr_gap else 10.0,
+            surrogate=eo_surrogate,
         )
         # Paper (Sec 3.1): L_out(θ) = L_{k,t}(θ; B_{k,t}, 0) — outer ridge is ||θ||², not ||θ-ζ||²
         Lout_val = L_out(theta_star, B.X, B.A, B.Y,
@@ -229,7 +235,11 @@ def client_round_al(
             reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
             L = loss_ds + reg
             if n_u > 0 and Ds.Delta_s > 0:
-                L = L + lambda_U * torch.log(1+torch.exp(-(Xa_u@theta_star).squeeze(-1).clamp(min=-50))).mean()
+                logits_u_h = (Xa_u @ theta_star).squeeze(-1)
+                if universum_mode == "hinge_shield":
+                    L = L + lambda_U * torch.clamp(logits_u_h - tpr_tau, min=0.0).mean()
+                else:
+                    L = L + lambda_U * torch.log(1+torch.exp(-logits_u_h.clamp(min=-50))).mean()
             return _hessian_vector_product(L, theta_star, h)
 
         h = _cg_solve(Hvp, v.float(), niter=30, tol=1e-4)
@@ -241,7 +251,11 @@ def client_round_al(
         reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
         Lin_for_x = loss_ds + reg
         if n_u > 0 and Ds.Delta_s > 0:
-            Lin_for_x = Lin_for_x + lambda_U * torch.log(1+torch.exp(-(Xa_u@theta_star).squeeze(-1).clamp(min=-50))).mean()
+            logits_u_x = (Xa_u @ theta_star).squeeze(-1)
+            if universum_mode == "hinge_shield":
+                Lin_for_x = Lin_for_x + lambda_U * torch.clamp(logits_u_x - tpr_tau, min=0.0).mean()
+            else:
+                Lin_for_x = Lin_for_x + lambda_U * torch.log(1+torch.exp(-logits_u_x.clamp(min=-50))).mean()
 
         # Implicit function theorem: d(theta*)/d(x) = -H^-1 * d/dx(∇_θ Lin), so the hypergradient
         # of Phi w.r.t. the features is -(∇_x ∇_θ Lin) @ h. Rather than forming the
