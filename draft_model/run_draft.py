@@ -25,6 +25,7 @@ if PROJECT_ROOT not in sys.path:
 from draft_model.notation import ClientOriginalData, Payload, SyntheticMinibatch, UniversumSet
 from draft_model.minibatch_design import (
     draw_original_minibatch, build_synthetic_templates, build_universum_templates,
+    BMIN, BMAX,
 )
 from draft_model.bilevel_al import client_round_simplified, client_round_al
 from draft_model.dp import DP_VARIANTS, apply_pre_server_dp, resolve_dp_config
@@ -179,6 +180,14 @@ def main():
     parser.add_argument("--deterministic", type=str2bool, default=True,
                          help="Pin single-thread + deterministic torch ops so identical seeds give "
                               "identical results (fixes pipeline non-determinism). Set false for speed.")
+    parser.add_argument("--syn_size", type=int, default=32,
+                         help="Synthetic points per client per round (m). Default 32 reproduces all "
+                              "reported results. Larger values also raise the original-minibatch "
+                              "floor B_min to m (a synthetic batch cannot exceed B).")
+    parser.add_argument("--save_synthetic", type=str2bool, default=False,
+                         help="Also write <results_file stem>_synthetic.npz with the released "
+                              "synthetic pool (all rounds) and the preprocessed val/test splits, "
+                              "for the reuse experiment (scripts/reuse_experiment.py).")
     args = parser.parse_args()
 
     # Reproducibility: seed every RNG and pin PyTorch's execution so the bilevel pipeline is
@@ -266,12 +275,15 @@ def main():
     theta_glob = zeta.copy()
     rho = 0.0 if args.fairness_off else args.rho
     round_logs = []
+    pool_X, pool_A, pool_Y = [], [], []
 
     for t in range(args.rounds):
         round_payloads = []
         for k, data in enumerate(clients_data):
-            B = draw_original_minibatch(data, rng)
-            Ds = build_synthetic_templates(B, Ds_size=32, rng=rng)
+            B = draw_original_minibatch(
+                data, rng, Bmin=max(BMIN, args.syn_size), Bmax=max(BMAX, args.syn_size),
+            )
+            Ds = build_synthetic_templates(B, Ds_size=args.syn_size, rng=rng)
 
             if args.no_universum:
                 U = UniversumSet(X=np.zeros((0, d)), A=np.zeros(0))
@@ -321,6 +333,8 @@ def main():
         # Optional pre-server DP on payloads, then optional post-server DP in aggregation.
         payloads_for_server = apply_pre_server_dp(round_payloads, dp_cfg, rng=rng)
         X_agg, A_agg, Y_agg = aggregate_payloads(payloads_for_server, dp_config=dp_cfg, rng=rng)
+        if args.save_synthetic and len(X_agg) > 0:
+            pool_X.append(X_agg.copy()); pool_A.append(A_agg.copy()); pool_Y.append(Y_agg.copy())
         if len(X_agg) == 0:
             theta_glob = zeta.copy()
         else:
@@ -411,6 +425,18 @@ def main():
         results["non_iid_eo_check"] = non_iid_eo_check
     if dp_privacy_budget is not None:
         results["dp_privacy_budget"] = dp_privacy_budget
+
+    if args.save_synthetic and pool_X:
+        npz_path = os.path.join(out_dir, os.path.splitext(args.results_file)[0] + "_synthetic.npz")
+        np.savez_compressed(
+            npz_path,
+            X_syn=np.vstack(pool_X), A_syn=np.concatenate(pool_A), Y_syn=np.concatenate(pool_Y),
+            round_id=np.concatenate([np.full(len(a), i) for i, a in enumerate(pool_A)]),
+            X_val=X_val, A_val=A_val, Y_val=Y_val, X_test=X_test, A_test=A_test, Y_test=Y_test,
+            X_train=X_train, A_train=A_train, Y_train=Y_train,
+            theta_glob=theta_glob, threshold_pipeline=thr_pipe,
+        )
+        print(f"Saved synthetic pool: {npz_path}")
 
     out_path = os.path.join(out_dir, args.results_file)
     with open(out_path, "w") as f:
