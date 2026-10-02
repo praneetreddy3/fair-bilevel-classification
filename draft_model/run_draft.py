@@ -180,6 +180,11 @@ def main():
     parser.add_argument("--deterministic", type=str2bool, default=True,
                          help="Pin single-thread + deterministic torch ops so identical seeds give "
                               "identical results (fixes pipeline non-determinism). Set false for speed.")
+    parser.add_argument("--ema_init", choices=["zero", "first"], default="zero",
+                         help="EMA initialisation of the fairness signal. 'zero' (default) "
+                              "reproduces all earlier results but makes the eo_gap stopping test "
+                              "fire after one outer step; 'first' starts the EMA at the first "
+                              "observed gap (the fix).")
     parser.add_argument("--syn_size", type=int, default=32,
                          help="Synthetic points per client per round (m). Default 32 reproduces all "
                               "reported results. Larger values also raise the original-minibatch "
@@ -311,6 +316,7 @@ def main():
                     outer_tol_xhat=args.outer_tol_xhat,
                     eo_surrogate=args.eo_surrogate,
                     universum_mode=args.universum_mode,
+                    ema_init=args.ema_init,
                 )
                 Ds_send = SyntheticMinibatch(
                     X=X_ds_new, A=Ds.A, Y=Ds.Y,
@@ -417,6 +423,11 @@ def main():
             "extended_metrics": extended_pipeline,
             "eo_surrogate": args.eo_surrogate,
             "universum_mode": args.universum_mode,
+            "ema_init": args.ema_init,
+            "rho": args.rho,
+            "epsilon_EO": args.epsilon_EO,
+            "fairness_off": bool(args.fairness_off),
+            "syn_size": args.syn_size,
         },
         "dataset": args.data,
         "round_logs": round_logs,

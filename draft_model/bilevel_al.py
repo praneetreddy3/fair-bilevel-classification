@@ -115,9 +115,16 @@ def client_round_al(
     outer_tol_xhat: float = 1e-6,
     eo_surrogate: str = "tpr_gap",
     universum_mode: str = "logistic_pseudo_positive",
+    ema_init: str = "zero",
 ):
     """
     Full bilevel AL solver for one client round (Algorithm 1).
+
+    ema_init: "zero" (original, reproduces all results reported before the fix) starts the
+    EMA of the fairness signal at 0, so after the first outer step it equals beta*g (~0.05)
+    and the eo_gap stopping test |g_ema| <= epsilon_EO fires immediately -- the loop then
+    makes a single feature step. "first" initialises the EMA at the first observed g, so the
+    stopping test reflects the actual fairness gap and the loop runs until it is met.
 
     Outer loop (J_outer iters): inner-optimize theta on Ds ∪ U (K_inner Adam steps), then
     take an implicit-differentiation step on the synthetic/Universum features to reduce the
@@ -284,7 +291,10 @@ def client_round_al(
             X_u.data.clamp_(-R, R)
 
         # Update EMA-smoothed fairness signal and multiplier
-        g_ema = compute_ema_estimate(g_val.detach().item(), g_ema, beta=ema_beta)
+        if ema_init == "first" and j == 0:
+            g_ema = g_val.detach().item()
+        else:
+            g_ema = compute_ema_estimate(g_val.detach().item(), g_ema, beta=ema_beta)
         lam = lam + rho * g_ema
         if stop_criterion == "eo_gap":
             if abs(g_ema) <= epsilon_EO:
