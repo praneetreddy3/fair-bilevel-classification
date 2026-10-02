@@ -99,26 +99,37 @@ def fit_eval(kind, seed, Xtr, Atr, Ytr, d, tune):
     return metrics(pt > thr, d["A_test"], d["Y_test"])
 
 
+def run_task(task):
+    """One (dataset, seed): fit every model class on every data source. Returns a list of results."""
+    ds, seed = task
+    f_ours = os.path.join(OUT, f"draft_results_{ds}_reuse_seed{seed}_synthetic.npz")
+    f_ctl = os.path.join(OUT, f"draft_results_{ds}_reusectl_seed{seed}_synthetic.npz")
+    if not (os.path.isfile(f_ours) and os.path.isfile(f_ctl)):
+        return []
+    ours, ctl = np.load(f_ours), np.load(f_ctl)
+    d = {k: ours[k] for k in ("X_val", "A_val", "Y_val", "X_test", "A_test", "Y_test")}
+    sources = {
+        "Real": (ours["X_train"], ours["A_train"], ours["Y_train"]),
+        "Synthetic w/o EO": (ctl["X_syn"], ctl["A_syn"], ctl["Y_syn"]),
+        "Synthetic (ours)": (ours["X_syn"], ours["A_syn"], ours["Y_syn"]),
+    }
+    out = []
+    for src, (X, A, Y) in sources.items():
+        for kind in KINDS:
+            r = fit_eval(kind, seed, X, A, Y, d, TUNE[ds])
+            if r is not None:
+                out.append((ds, src, kind, seed, r))
+    return out
+
+
 def main():
+    from concurrent.futures import ProcessPoolExecutor
+    tasks = [(ds, seed) for ds in DATASETS for seed in SEEDS]
     results = {}
-    for ds in DATASETS:
-        for seed in SEEDS:
-            f_ours = os.path.join(OUT, f"draft_results_{ds}_reuse_seed{seed}_synthetic.npz")
-            f_ctl = os.path.join(OUT, f"draft_results_{ds}_reusectl_seed{seed}_synthetic.npz")
-            if not (os.path.isfile(f_ours) and os.path.isfile(f_ctl)):
-                continue
-            ours, ctl = np.load(f_ours), np.load(f_ctl)
-            d = {k: ours[k] for k in ("X_val", "A_val", "Y_val", "X_test", "A_test", "Y_test")}
-            sources = {
-                "Real": (ours["X_train"], ours["A_train"], ours["Y_train"]),
-                "Synthetic w/o EO": (ctl["X_syn"], ctl["A_syn"], ctl["Y_syn"]),
-                "Synthetic (ours)": (ours["X_syn"], ours["A_syn"], ours["Y_syn"]),
-            }
-            for src, (X, A, Y) in sources.items():
-                for kind in KINDS:
-                    r = fit_eval(kind, seed, X, A, Y, d, TUNE[ds])
-                    if r is not None:
-                        results.setdefault(ds, {}).setdefault(src, {}).setdefault(kind, {})[seed] = r
+    with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
+        for rows in ex.map(run_task, tasks):
+            for ds, src, kind, seed, r in rows:
+                results.setdefault(ds, {}).setdefault(src, {}).setdefault(kind, {})[seed] = r
     with open(os.path.join(OUT, "reuse_experiment.json"), "w") as fh:
         json.dump(results, fh, indent=2)
 
