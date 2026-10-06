@@ -1,0 +1,120 @@
+% Exact replacement text for the Overleaf draft (October 2026).
+% Each block: FIND = text currently in the draft; REPLACE = new text. Reasons: see the findings report.
+
+% ---------------------------------------------------------------------------
+% 1. ABSTRACT -- replace the whole abstract body
+% ---------------------------------------------------------------------------
+Collaborative learning across institutions must often satisfy both privacy and group-fairness requirements while clients hold small, class-imbalanced local datasets. We propose a client-centric bilevel framework in which clients share only synthetic data. Each client draws jointly $(S,Y)$-stratified minibatches from its private data, trains an inner classifier on a synthetic batch with matching stratum labels, optionally regularized by Universum points to counter class imbalance, and updates the synthetic features with an Augmented Lagrangian (AL) that penalizes a bounded, sigmoid-smoothed Equal Opportunity (EO) surrogate evaluated on the original minibatch. Hypergradients are computed by implicit differentiation with conjugate-gradient Hessian-vector products, so no raw records or gradients leave the client. An optional differential-privacy stage can perturb the released synthetics, and we quantify its privacy budget. The server aggregates the synthetic batches over multiple rounds and trains a global predictor. With linear logistic regression on Credit, Adult, Law, and COMPAS, the released synthetic data reduce the EO gap relative to training on pooled real data where baseline disparity is large (Law: $0.381\to0.262$; COMPAS: $0.276\to0.166$) at a moderate accuracy cost. A control with the AL penalty disabled attains similar gaps, indicating that most of this gain comes from stratified synthetic sharing rather than the penalty itself. Compared with FedAvg, FairFed, FedFB, and FedFair, which reach higher accuracy and lower EO gaps on several datasets but exchange model updates and real-data group statistics, our method trades some utility for synthetic-only sharing.
+
+% ---------------------------------------------------------------------------
+% 2. CONTRIBUTIONS -- replace the three \item lines
+% ---------------------------------------------------------------------------
+\item \textbf{Framework:} A client-centric bilevel procedure that draws jointly $(S,Y)$-stratified minibatches, trains on synthetic batches with matching stratum labels, optionally adds Universum regularization against class imbalance, and shares only synthetic data with the server.
+\item \textbf{Local solver:} An Augmented Lagrangian outer update of the synthetic features on a bounded EO surrogate, with implicit hypergradients computed by conjugate gradient on Hessian-vector products, run entirely on the client so that raw records never leave it.
+\item \textbf{Empirical study:} An evaluation on four datasets with a $\rho{=}0$ control that isolates the effect of the AL penalty, a Universum ablation, a comparison with FedAvg, FairFed, FedFB, and FedFair under matched splits, the privacy budget of the optional DP release, and local-vs-pooled EO under non-IID partitions.
+
+% ---------------------------------------------------------------------------
+% 3. INTRODUCTION
+% FIND:  "Empirically, with linear logistic regression ... the AL stage delivers its strongest EO
+%         reductions ... (Law, COMPAS). When the baseline is already near fair ... better choice.
+%         We treat this regime-aware guidance as part of the empirical contribution."
+% REPLACE:
+% ---------------------------------------------------------------------------
+Empirically, with linear logistic regression on Credit, Adult, Law, and COMPAS, the released synthetic data reduce the EO gap most when the unconstrained gap is large (Law, COMPAS); a $\rho{=}0$ control shows that this gain comes mainly from stratified synthetic sharing rather than the AL penalty.
+
+% ---------------------------------------------------------------------------
+% 4. RELATED WORK, Positioning
+% FIND:  "A direct comparison against FairFed, FedFB, and FedFair under matched splits and seeds is
+%         left to future work; here we compare against our own calibrated baseline."
+% REPLACE:
+% ---------------------------------------------------------------------------
+Section~IV-B compares against FedAvg, FairFed, FedFB, and FedFair under matched splits and seeds.
+
+% ---------------------------------------------------------------------------
+% 5. EXPERIMENTS, Setup -- ADD after "...repeats until a local stopping rule (Section~III-C)."
+% ---------------------------------------------------------------------------
+Because the EMA estimate is initialized at zero, in the reported runs the early-stopping test is met after the first outer step, so each client performs one feature update per round; the $\rho{=}0$ control in Section~IV-B quantifies the effect of the AL penalty.
+
+% ---------------------------------------------------------------------------
+% 6a. SECTION IV-B
+% FIND:  "The AL stage is most effective when unconstrained EO disparity is material."
+% REPLACE:
+% ---------------------------------------------------------------------------
+EO gains over the baseline are largest when unconstrained disparity is material. A control run with the same pipeline and $\rho=0$ gives comparable EO gaps (Law $0.259$, COMPAS $0.166$, Credit $0.067$, Adult $0.107$), so on Law, COMPAS and Credit the improvement is attributable mainly to stratified synthetic sharing; on Adult the penalty lowers EO further ($0.107 \to 0.069$).
+
+% 6b. FIND:  "When unconstrained EO is already small, a strong AL penalty is less appropriate:"
+%     REPLACE:
+When unconstrained EO is already small, the pipeline does not improve it:
+
+% 6c. FIND:  "Overall, the results support a practical rule: enable a stronger EO-AL schedule when
+%            validation baseline disparity is large, and use a lighter schedule when the
+%            unconstrained model is already near fair."
+%     REPLACE:
+Overall, synthetic-only sharing lowers EO where the real-data baseline is markedly unfair, at a moderate accuracy cost.
+
+% 6d. ADD before "\textbf{Cross-metric insight.}"
+\textbf{Federated baselines.}
+Table~\ref{tab:fl-baselines} compares against FedAvg, FairFed, FedFB, and FedFair under the same splits, clients, and rounds. FedFB and FedFair attain lower EO gaps at higher accuracy on Credit, Adult, and COMPAS, and FedFair is more accurate on Law at a similar EO gap. These methods, however, exchange model updates and real-data group statistics every round, whereas our clients release only synthetic batches; the comparison therefore quantifies the utility--fairness cost of synthetic-only sharing.
+
+% 6e. ADD after the Table II block (after its \end{table*})
+\begin{table*}[!t]
+\caption{Comparison with federated baselines (mean \(\pm\) std over five seeds; \(K{=}5\), \(T{=}8\), same splits). FedAvg, FairFed, FedFB and FedFair exchange model updates (the fair variants also real-data group statistics); Ours exchanges only synthetic data. Baselines are our re-implementations with hyperparameters selected on validation data.}
+\label{tab:fl-baselines}
+\centering
+\small
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+\textbf{Dataset} & \textbf{Method} & \textbf{Acc.} & \textbf{F1} & \textbf{EO gap} & \textbf{DemP gap} & \textbf{EOD gap} \\
+\midrule
+Credit & FedAvg & \(0.757\pm0.012\) & \(0.497\pm0.004\) & \(0.052\pm0.012\) & \(0.023\pm0.001\) & \(0.029\pm0.002\) \\
+Credit & FairFed & \(0.741\pm0.008\) & \(0.490\pm0.004\) & \(0.059\pm0.011\) & \(0.023\pm0.002\) & \(0.029\pm0.007\) \\
+Credit & FedFB & \(0.758\pm0.013\) & \(0.496\pm0.010\) & \(0.015\pm0.007\) & \(0.007\pm0.001\) & \(0.012\pm0.003\) \\
+Credit & FedFair & \(0.768\pm0.016\) & \(0.497\pm0.006\) & \(0.050\pm0.009\) & \(0.004\pm0.002\) & \(0.039\pm0.003\) \\
+Credit & Ours & \(0.737\pm0.023\) & \(0.452\pm0.015\) & \(0.068\pm0.013\) & \(0.125\pm0.035\) & \(0.126\pm0.037\) \\
+\midrule
+Adult & FedAvg & \(0.845\pm0.001\) & \(0.653\pm0.001\) & \(0.011\pm0.003\) & \(0.146\pm0.001\) & \(0.057\pm0.001\) \\
+Adult & FairFed & \(0.845\pm0.000\) & \(0.653\pm0.001\) & \(0.009\pm0.010\) & \(0.146\pm0.003\) & \(0.056\pm0.002\) \\
+Adult & FedFB & \(0.845\pm0.000\) & \(0.653\pm0.001\) & \(0.031\pm0.009\) & \(0.159\pm0.003\) & \(0.065\pm0.003\) \\
+Adult & FedFair & \(0.845\pm0.001\) & \(0.653\pm0.001\) & \(0.007\pm0.004\) & \(0.148\pm0.003\) & \(0.058\pm0.002\) \\
+Adult & Ours & \(0.696\pm0.008\) & \(0.560\pm0.009\) & \(0.069\pm0.046\) & \(0.135\pm0.059\) & \(0.112\pm0.031\) \\
+\midrule
+Law & FedAvg & \(0.774\pm0.019\) & \(0.857\pm0.014\) & \(0.357\pm0.008\) & \(0.182\pm0.004\) & \(0.367\pm0.013\) \\
+Law & FairFed & \(0.777\pm0.016\) & \(0.860\pm0.012\) & \(0.353\pm0.015\) & \(0.175\pm0.006\) & \(0.353\pm0.014\) \\
+Law & FedFB & \(0.761\pm0.013\) & \(0.848\pm0.010\) & \(0.328\pm0.007\) & \(0.154\pm0.005\) & \(0.306\pm0.012\) \\
+Law & FedFair & \(0.792\pm0.015\) & \(0.871\pm0.011\) & \(0.281\pm0.010\) & \(0.133\pm0.003\) & \(0.256\pm0.005\) \\
+Law & Ours & \(0.700\pm0.019\) & \(0.806\pm0.017\) & \(0.262\pm0.077\) & \(0.243\pm0.071\) & \(0.232\pm0.093\) \\
+\midrule
+COMPAS & FedAvg & \(0.641\pm0.007\) & \(0.625\pm0.011\) & \(0.270\pm0.012\) & \(0.248\pm0.012\) & \(0.279\pm0.006\) \\
+COMPAS & FairFed & \(0.639\pm0.014\) & \(0.619\pm0.016\) & \(0.278\pm0.034\) & \(0.251\pm0.024\) & \(0.283\pm0.019\) \\
+COMPAS & FedFB & \(0.634\pm0.012\) & \(0.630\pm0.013\) & \(0.023\pm0.013\) & \(0.051\pm0.014\) & \(0.156\pm0.016\) \\
+COMPAS & FedFair & \(0.636\pm0.004\) & \(0.625\pm0.017\) & \(0.053\pm0.026\) & \(0.026\pm0.013\) & \(0.077\pm0.006\) \\
+COMPAS & Ours & \(0.632\pm0.015\) & \(0.616\pm0.018\) & \(0.166\pm0.060\) & \(0.146\pm0.049\) & \(0.178\pm0.056\) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% ---------------------------------------------------------------------------
+% 7. REGIME-AWARE PENALTY SELECTION -- replace the whole subsection with:
+% ---------------------------------------------------------------------------
+\subsection{Practical Guidance}
+Because a $\rho{=}0$ control attains EO gaps similar to the penalized runs, practitioners can first run the synthetic pipeline without the penalty and enable the AL stage only if the validation EO gap remains above the target.
+Monitor DemP and EOD alongside EO, because an EO win can coexist with a DemP change.
+
+% ---------------------------------------------------------------------------
+% 8. CONCLUSION -- replace from "Under linear logistic regression, ..." to the end of the paragraph
+% ---------------------------------------------------------------------------
+Under linear logistic regression, the released synthetic data yield the largest EO gains over real-data training on Law and COMPAS; a $\rho{=}0$ control indicates these come mainly from stratified synthetic sharing, and fair federated baselines that exchange model updates reach higher utility at the cost of sharing more information. Future work includes making the EO penalty itself more effective (e.g., a less saturating surrogate), a noise-level sweep for the privacy release, and $S$-blind predictors.
+
+% ---------------------------------------------------------------------------
+% 9. TABLE NUMBER FIXES (last-digit rounding of the std)
+% ---------------------------------------------------------------------------
+% Table I  Credit Ours   Bal. Acc.  0.616\pm0.010 -> 0.616\pm0.009
+% Table I  Adult  Ours   Bal. Acc.  0.738\pm0.009 -> 0.738\pm0.008
+% Table I  Adult  Base.  PR-AUC     0.741\pm0.001 -> 0.741\pm0.000
+% Table II Credit Base.  EO gap     0.054\pm0.019 -> 0.054\pm0.018
+% Table II Adult  Base.  EO gap     0.019\pm0.003 -> 0.019\pm0.002
+
+% ---------------------------------------------------------------------------
+% 10. EMAILS under the author block -- list in author order
+% ---------------------------------------------------------------------------
+% schinth6@gmu.edu, yjzhang@intellisky.org, boukouva@american.edu,\\ dliao2@gmu.edu, mousavi@american.edu
