@@ -107,6 +107,7 @@ def client_round_al(
     use_tpr_gap: bool = True,
     tpr_alpha: float = 10.0,
     hg_sign: str = "orig",
+    diag: list = None,
     tpr_tau: float = 0.0,
     ema_beta: float = 0.15,
     use_importance_weighting: bool = True,
@@ -231,6 +232,9 @@ def client_round_al(
         v = theta_star.grad.clone()
         theta_star.grad = None
         g_val.backward(retain_graph=True)
+        if diag is not None:
+            diag.append({"j": j, "g": g_val.item(), "gl": v.norm().item(),
+                         "gg": theta_star.grad.norm().item(), "lam": float(lam)})
         v = v + lam * theta_star.grad + rho * g_val.detach() * theta_star.grad
         theta_star.grad = None
 

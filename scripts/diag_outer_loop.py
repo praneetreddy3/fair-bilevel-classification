@@ -84,6 +84,15 @@ def main():
                     ema_init=ema_init, tpr_alpha=a.alpha, hg_sign=a.hg_sign)
                 g1 = surrogate(theta, B, a.alpha)
                 moved = float(np.mean(np.abs(Xn - Ds.X)))
+                if ema_init == "first" and J == 20 and rho in (0.0, 2.0):
+                    dg = []
+                    torch.manual_seed(a.seed)
+                    client_round_al(B, Ds, U, zeta, lambda_theta_in=1e-4, lambda_theta_out=1e-4, lambda_U=0.5,
+                                    rho=rho, epsilon_EO=0.0, K_inner=100, J_outer=6, eta_theta=0.05,
+                                    eta_x=0.02, R=10.0, seed=a.seed, ema_init="first",
+                                    tpr_alpha=a.alpha, hg_sign=a.hg_sign, diag=dg)
+                    for r in dg:
+                        print(f"   rho={rho} j={r['j']} g={r['g']:.4f} |grad_Lout|={r['gl']:.2e} |grad_g|={r['gg']:.2e}")
                 print(f"{ema_init:<9}{rho:<7}{J:<4}{g1:<10.4f}{g1 - g0:<+10.4f}{moved:<10.4f}")
 
 
