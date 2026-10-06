@@ -106,6 +106,7 @@ def client_round_al(
     debug_invariants: bool = False,
     use_tpr_gap: bool = True,
     tpr_alpha: float = 10.0,
+    hg_sign: str = "orig",
     tpr_tau: float = 0.0,
     ema_beta: float = 0.15,
     use_importance_weighting: bool = True,
@@ -283,11 +284,15 @@ def client_round_al(
             grad_inf_x0 = grad_inf_x
         grad_tol = outer_tol_xhat * max(1.0, float(grad_inf_x0))
 
+        # grad_X_* = (d^2 Lin/dx dtheta) h = -dPhi/dx (implicit function theorem), so descent on Phi is
+        # x += eta*grad_X ("correct"). "orig" keeps the historical x -= eta*grad_X (ascent on Phi) so
+        # all earlier results stay reproducible.
+        step = -eta_x if hg_sign == "orig" else eta_x
         if grad_X_ds is not None:
-            X_ds.data.sub_(eta_x * grad_X_ds)
+            X_ds.data.add_(step * grad_X_ds)
             X_ds.data.clamp_(-R, R)
         if grad_X_u is not None:
-            X_u.data.sub_(eta_x * grad_X_u)
+            X_u.data.add_(step * grad_X_u)
             X_u.data.clamp_(-R, R)
 
         # Update EMA-smoothed fairness signal and multiplier

@@ -154,6 +154,8 @@ def main():
                               "(maximise balanced accuracy) and apply it to the test set.")
     parser.add_argument("--use_tpr_gap", type=str2bool, default=True)
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
+    parser.add_argument("--hg_sign", choices=["orig", "correct"], default="orig",
+                        help="sign of the implicit-gradient feature step; orig = historical (ascent on Phi)")
     parser.add_argument("--tpr_tau", type=float, default=0.0)
     parser.add_argument("--ema_beta", type=float, default=0.15)
     parser.add_argument("--use_importance_weighting", type=str2bool, default=True)
@@ -308,6 +310,7 @@ def main():
                     seed=args.seed + t * 1000 + k,
                     use_tpr_gap=args.use_tpr_gap,
                     tpr_alpha=args.tpr_alpha,
+                    hg_sign=args.hg_sign,
                     tpr_tau=args.tpr_tau,
                     ema_beta=args.ema_beta,
                     use_importance_weighting=args.use_importance_weighting,
@@ -405,6 +408,7 @@ def main():
             "num_clients": args.num_clients, "rounds": args.rounds,
             "use_tpr_gap": args.use_tpr_gap,
             "tpr_alpha": args.tpr_alpha,
+            "hg_sign": args.hg_sign,
             "tpr_tau": args.tpr_tau,
             "ema_beta": args.ema_beta,
             "use_importance_weighting": args.use_importance_weighting,

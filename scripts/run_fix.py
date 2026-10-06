@@ -9,6 +9,7 @@ really within epsilon_EO (or J = 20 steps).
 
   python scripts/run_fix.py --stage 1 --jobs 4   # 40 runs: reported (rho, eps) + rho=0 control
   python scripts/run_fix.py --stage 2 --jobs 4   # full validation grid (adds the other configs)
+  python scripts/run_fix.py --stage 3 --jobs 4   # sign-corrected feature step (--hg_sign correct), rho grid + control
   python scripts/run_fix.py --stage 1 --dry_run  # print commands only
 
 Runs whose result file exists are skipped. Settings other than the ones named are the reported ones
@@ -42,6 +43,17 @@ GRID_EPS = [0.1, 0.02]
 
 def jobs_for(stage):
     jobs = []
+    if stage == 3:   # sign-corrected feature step (--hg_sign correct)
+        for ds, cfg in CFG.items():
+            for s in SEEDS:
+                jobs.append((f"draft_results_{ds}_sfixctl_seed{s}.json",
+                             ["--data", ds, *cfg, "--seed", str(s), *COMMON, "--hg_sign", "correct",
+                              "--rho", "0.0", "--epsilon_EO", "0.1", "--fairness_off"]))
+                for rho in GRID_RHO:
+                    jobs.append((f"draft_results_{ds}_sfix_rho{rho}_eps0.1_seed{s}.json",
+                                 ["--data", ds, *cfg, "--seed", str(s), *COMMON, "--hg_sign", "correct",
+                                  "--rho", str(rho), "--epsilon_EO", "0.1"]))
+        return jobs
     for ds, cfg in CFG.items():
         for s in SEEDS:
             jobs.append((f"draft_results_{ds}_fixctl_seed{s}.json",
@@ -73,7 +85,7 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
     a = ap.parse_args()

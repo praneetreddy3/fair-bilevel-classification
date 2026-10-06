@@ -11,6 +11,7 @@ Also prints the rho = 0 control (same fix) and the previously reported numbers, 
 
 Run from repo root:  python scripts/ema_fix_select.py      -> outputs/ema_fix_summary.md
 """
+import argparse
 import glob
 import json
 import os
@@ -40,24 +41,29 @@ def summ(runs):
 
 
 def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--prefix", default="fix", choices=["fix", "sfix"])
+    PFX = ap.parse_args().prefix
     f = lambda p: f"{p[0]:.3f}±{p[1]:.3f}"
     hdr = ("| Dataset | Setting | n | val Acc | val EO | test Acc | test F1 | test EO | test DemP | test EOD | selected |\n"
            "|---|---|---|---|---|---|---|---|---|---|---|")
     lines = [hdr]
     for ds in DATASETS:
         grid = {}
-        for p in glob.glob(os.path.join(OUT, f"draft_results_{ds}_fix_rho*_eps*_seed1.json")):
-            m = re.search(r"rho([0-9.]+)_eps([0-9.]+)_seed1", os.path.basename(p))
-            tag = f"rho{m.group(1)}_eps{m.group(2)}"
-            runs = load(f"draft_results_{ds}_fix_{tag}_seed*.json")
+        for p in glob.glob(os.path.join(OUT, f"draft_results_{ds}_{PFX}_rho*_eps*_seed1.json")):
+            m = re.search(rf"draft_results_{ds}_{PFX}_(rho[0-9.]+_eps[0-9.]+)_seed1", os.path.basename(p))
+            if not m:
+                continue
+            tag = m.group(1)
+            pat = f"draft_results_{ds}_{PFX}_{tag}_seed*.json"
+            runs = load(pat)
             if len(runs) == 5:
                 grid[tag] = summ(runs)
         feas = {k: v for k, v in grid.items() if v["val_eo"] <= EO_TARGET}
         sel = (max(feas, key=lambda k: feas[k]["val_acc"]) if feas
                else min(grid, key=lambda k: grid[k]["val_eo"]) if grid else None)
         extra = {}
-        if (r := load(f"draft_results_{ds}_fixctl_seed*.json")) and len(r) == 5:
-            extra["control rho=0 (fix)"] = summ(r)
+        if (r := load(f"draft_results_{ds}_{PFX}ctl_seed*.json")) and len(r) == 5:
+            extra["control rho=0 (same fix)"] = summ(r)
         if (r := load(f"draft_results_{ds}_final_seed*.json")) and len(r) == 5:
             extra["previous (EMA bug)"] = summ(r)
             base = [x["baseline"] for x in r]
@@ -73,7 +79,7 @@ def main():
                          f"{f(s['f1'])} | {f(s['eo'])} | {f(s['dp'])} | {f(s['eod'])} | {mark} |")
     text = "\n".join(lines)
     print(text)
-    with open(os.path.join(OUT, "ema_fix_summary.md"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(OUT, f"ema_{PFX}_summary.md" if PFX != "fix" else "ema_fix_summary.md"), "w", encoding="utf-8") as fh:
         fh.write(text + "\n")
 
 

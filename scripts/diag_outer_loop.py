@@ -38,14 +38,16 @@ def fit_theta(Xs, As, Ys, zeta, steps=100, lr=0.05):
     return fb.local_adam(zeta.copy(), Z, Ys, np.ones(len(Ys)), steps=steps, lr=lr)
 
 
-def surrogate(theta, B):
-    return float(g_EO(torch.tensor(theta, dtype=torch.float32), B.X, B.A, B.Y).item())
+def surrogate(theta, B, alpha=10.0):
+    return float(g_EO(torch.tensor(theta, dtype=torch.float32), B.X, B.A, B.Y, alpha=alpha).item())
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", choices=["credit", "adult", "law", "compas"], default="law")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--alpha", type=float, default=10.0, help="sigmoid sharpness of the TPR surrogate")
+    ap.add_argument("--hg_sign", choices=["orig", "correct"], default="orig")
     a = ap.parse_args()
 
     cfg = fb.DATASET_CFG[a.data]
@@ -65,12 +67,12 @@ def main():
                                       q_a0y1=B.q_a0y1, q_a1y1=B.q_a1y1, B=B)
 
     theta0 = fit_theta(Ds.X, Ds.A, Ds.Y, zeta)
-    g0 = surrogate(theta0, B)
-    print(f"dataset={a.data} original minibatch n={len(B.Y)} synthetic n={Ds.size()} U={U.size()}")
+    g0 = surrogate(theta0, B, a.alpha)
+    print(f"dataset={a.data} hg_sign={a.hg_sign} alpha={a.alpha} original minibatch n={len(B.Y)} (positives per group: S0={B.q_a0y1}, S1={B.q_a1y1}) synthetic n={Ds.size()} U={U.size()}")
     print(f"g_EO of model fitted on INITIAL synthetics: {g0:.4f}\n")
     print(f"{'ema_init':<9}{'rho':<7}{'J':<4}{'g_after':<10}{'change':<10}{'moved':<10}")
     for ema_init in ("zero", "first"):
-        for rho in (0.0, 0.1, 2.0):
+        for rho in (0.0, 0.1, 0.5, 2.0):
             for J in (1, 5, 20):
                 if ema_init == "zero" and J != 20:
                     continue
@@ -79,8 +81,8 @@ def main():
                     B, Ds, U, zeta, lambda_theta_in=1e-4, lambda_theta_out=1e-4, lambda_U=0.5,
                     rho=rho, epsilon_EO=0.0 if ema_init == "first" else 0.1,  # eps=0: never stop early
                     K_inner=100, J_outer=J, eta_theta=0.05, eta_x=0.02, R=10.0, seed=a.seed,
-                    ema_init=ema_init)
-                g1 = surrogate(theta, B)
+                    ema_init=ema_init, tpr_alpha=a.alpha, hg_sign=a.hg_sign)
+                g1 = surrogate(theta, B, a.alpha)
                 moved = float(np.mean(np.abs(Xn - Ds.X)))
                 print(f"{ema_init:<9}{rho:<7}{J:<4}{g1:<10.4f}{g1 - g0:<+10.4f}{moved:<10.4f}")
 
