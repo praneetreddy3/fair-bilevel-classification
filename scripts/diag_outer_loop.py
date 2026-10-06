@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--alpha", type=float, default=10.0, help="sigmoid sharpness of the TPR surrogate")
     ap.add_argument("--hg_sign", choices=["orig", "correct"], default="orig")
+    ap.add_argument("--step_clip", type=float, default=0.0)
     a = ap.parse_args()
 
     cfg = fb.DATASET_CFG[a.data]
@@ -72,7 +73,7 @@ def main():
     print(f"g_EO of model fitted on INITIAL synthetics: {g0:.4f}\n")
     print(f"{'ema_init':<9}{'rho':<7}{'J':<4}{'g_after':<10}{'change':<10}{'moved':<10}")
     for ema_init in ("zero", "first"):
-        for rho in (0.0, 0.1, 0.5, 2.0):
+        for rho in (0.0, 1.0, 10.0, 50.0):
             for J in (1, 5, 20):
                 if ema_init == "zero" and J != 20:
                     continue
@@ -81,16 +82,16 @@ def main():
                     B, Ds, U, zeta, lambda_theta_in=1e-4, lambda_theta_out=1e-4, lambda_U=0.5,
                     rho=rho, epsilon_EO=0.0 if ema_init == "first" else 0.1,  # eps=0: never stop early
                     K_inner=100, J_outer=J, eta_theta=0.05, eta_x=0.02, R=10.0, seed=a.seed,
-                    ema_init=ema_init, tpr_alpha=a.alpha, hg_sign=a.hg_sign)
+                    ema_init=ema_init, tpr_alpha=a.alpha, hg_sign=a.hg_sign, step_clip=a.step_clip)
                 g1 = surrogate(theta, B, a.alpha)
                 moved = float(np.mean(np.abs(Xn - Ds.X)))
-                if ema_init == "first" and J == 20 and rho in (0.0, 2.0):
+                if ema_init == "first" and J == 20 and rho in (0.0, 50.0):
                     dg = []
                     torch.manual_seed(a.seed)
                     client_round_al(B, Ds, U, zeta, lambda_theta_in=1e-4, lambda_theta_out=1e-4, lambda_U=0.5,
                                     rho=rho, epsilon_EO=0.0, K_inner=100, J_outer=6, eta_theta=0.05,
                                     eta_x=0.02, R=10.0, seed=a.seed, ema_init="first",
-                                    tpr_alpha=a.alpha, hg_sign=a.hg_sign, diag=dg)
+                                    tpr_alpha=a.alpha, hg_sign=a.hg_sign, diag=dg, step_clip=a.step_clip)
                     for r in dg:
                         print(f"   rho={rho} j={r['j']} g={r['g']:.4f} |grad_Lout|={r['gl']:.2e} |grad_g|={r['gg']:.2e}")
                 print(f"{ema_init:<9}{rho:<7}{J:<4}{g1:<10.4f}{g1 - g0:<+10.4f}{moved:<10.4f}")

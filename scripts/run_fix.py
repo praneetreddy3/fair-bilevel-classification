@@ -43,6 +43,15 @@ GRID_EPS = [0.1, 0.02]
 
 def jobs_for(stage):
     jobs = []
+    if stage == 4:   # smooth surrogate + big rho + bounded step, Law and Adult only
+        for ds in ("law", "adult"):
+            for s in SEEDS:
+                base = ["--data", ds, *CFG[ds], "--seed", str(s), *COMMON, "--tpr_alpha", "2.0",
+                        "--step_clip", "0.05", "--epsilon_EO", "0.02"]
+                jobs.append((f"draft_results_{ds}_smoothctl_seed{s}.json", base + ["--rho", "0.0", "--fairness_off"]))
+                for rho in (1.0, 10.0, 50.0):
+                    jobs.append((f"draft_results_{ds}_smooth_rho{rho}_eps0.02_seed{s}.json", base + ["--rho", str(rho)]))
+        return jobs
     if stage == 3:   # sign-corrected feature step (--hg_sign correct)
         for ds, cfg in CFG.items():
             for s in SEEDS:
@@ -85,7 +94,7 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2, 3], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
     a = ap.parse_args()

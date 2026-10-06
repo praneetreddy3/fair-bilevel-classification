@@ -154,6 +154,7 @@ def main():
                               "(maximise balanced accuracy) and apply it to the test set.")
     parser.add_argument("--use_tpr_gap", type=str2bool, default=True)
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
+    parser.add_argument("--step_clip", type=float, default=0.0, help="max |change| per feature coordinate per outer step (0=off)")
     parser.add_argument("--hg_sign", choices=["orig", "correct"], default="orig",
                         help="sign of the implicit-gradient feature step; orig = historical (ascent on Phi)")
     parser.add_argument("--tpr_tau", type=float, default=0.0)
@@ -311,6 +312,7 @@ def main():
                     use_tpr_gap=args.use_tpr_gap,
                     tpr_alpha=args.tpr_alpha,
                     hg_sign=args.hg_sign,
+                    step_clip=args.step_clip,
                     tpr_tau=args.tpr_tau,
                     ema_beta=args.ema_beta,
                     use_importance_weighting=args.use_importance_weighting,
@@ -409,6 +411,7 @@ def main():
             "use_tpr_gap": args.use_tpr_gap,
             "tpr_alpha": args.tpr_alpha,
             "hg_sign": args.hg_sign,
+            "step_clip": args.step_clip,
             "tpr_tau": args.tpr_tau,
             "ema_beta": args.ema_beta,
             "use_importance_weighting": args.use_importance_weighting,

@@ -108,6 +108,7 @@ def client_round_al(
     tpr_alpha: float = 10.0,
     hg_sign: str = "orig",
     diag: list = None,
+    step_clip: float = 0.0,
     tpr_tau: float = 0.0,
     ema_beta: float = 0.15,
     use_importance_weighting: bool = True,
@@ -292,6 +293,11 @@ def client_round_al(
         # x += eta*grad_X ("correct"). "orig" keeps the historical x -= eta*grad_X (ascent on Phi) so
         # all earlier results stay reproducible.
         step = -eta_x if hg_sign == "orig" else eta_x
+        if step_clip > 0:   # opt-in: bound every coordinate of the feature step (stability)
+            if grad_X_ds is not None:
+                grad_X_ds = torch.nan_to_num(grad_X_ds).clamp(-step_clip / eta_x, step_clip / eta_x)
+            if grad_X_u is not None:
+                grad_X_u = torch.nan_to_num(grad_X_u).clamp(-step_clip / eta_x, step_clip / eta_x)
         if grad_X_ds is not None:
             X_ds.data.add_(step * grad_X_ds)
             X_ds.data.clamp_(-R, R)
