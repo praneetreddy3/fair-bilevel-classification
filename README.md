@@ -16,8 +16,8 @@ the accompanying reference implementation in [`FairSynData/`](FairSynData/) (the
 original authors' code, including the Law School dataset it was validated on), extended
 with:
 - **Universum pseudo-positives** (`draft_model/minibatch_design.py`) — S-balanced
-  synthetic pseudo-positive points that turn out to be the primary fairness mechanism
-  (see the ablations in `docs/PAPER_TABLES.md`, T5).
+  synthetic pseudo-positive points; their effect is dataset-dependent (see the ablations
+  in `docs/PAPER_TABLES.md`, T5, and "Later findings" below).
 - **Differential-privacy variants** (`draft_model/dp.py`) — none / pre-server /
   post-server / both, so the privacy-accuracy-fairness trade-off is a flag, not a rewrite.
 - **Non-IID client partitioning** (`--partition dirichlet`) and two additional
@@ -37,7 +37,13 @@ draft_model/        core method (this repo's code)
   dp.py                DP variants: none / pre_server / post_server / both
   notation.py           data structures
 pipeline/            dataset loaders (adult, credit, law, compas, 2d example)
-scripts/             run_final.sh (final 5-seed runs) + sweep_*.sh (grid search)
+scripts/             run_final.sh (final 5-seed runs) + sweep_*.sh (grid search), plus:
+  fl_baselines.py      FedAvg / FairFed / FedFB / FedFair re-implementations, same splits
+  run_bc.py            synthetic batch-size sweep (syn_size_select.py) + reuse runs
+  reuse_experiment.py  train other models (LogReg / MLP / GBM) on the released synthetic data
+  run_fix.py           re-runs with the EMA stopping fix (summarised by ema_fix_select.py)
+  diag_outer_loop.py   one-client diagnostic of the outer (feature) loop
+  check_paper.py       checks every Table I-III number in the paper PDF against outputs/
 outputs/             result JSONs, figures, outputs/tables/ (T1-T5 CSVs)
 docs/                guides, reports, paper tables (index below)
 verify.py            verification harness (see Reproducibility)
@@ -163,6 +169,31 @@ by a separate contributor) is not part of the final 4-dataset comparison above �
 "German Credit (secondary, single seed)" section in `docs/RESULTS.md` for that result and
 why it's reported separately.*
 
+## Later findings (October 2026) — read before citing the results above
+
+1. **EMA stopping rule.** With the original EMA initialisation (`--ema_init zero`, the
+   default, used for every result above) the smoothed fairness estimate starts at 0, so
+   the outer loop stops after a single small feature step. `--ema_init first` fixes this.
+2. **rho = 0 control.** The same pipeline with the fairness penalty disabled
+   (`--fairness_off`) gives EO gaps close to the reported ones (Credit 0.067, Adult 0.107,
+   Law 0.259, COMPAS 0.166 vs. 0.068 / 0.069 / 0.262 / 0.166). With the stopping fix and a
+   validation-only grid (`outputs/ema_fix_summary.md`) the penalty helps slightly on Adult
+   and COMPAS and not on Credit or Law. So the EO reduction relative to the real-data
+   baseline comes mainly from stratified synthetic sharing, not from the AL penalty.
+3. **Why.** `scripts/diag_outer_loop.py` shows the gradient of the sigmoid-smoothed EO
+   surrogate is ~100x smaller than that of the outer loss and reaches 0 within a few outer
+   steps (the sigmoids saturate on the small per-group positive sets), so rho has little
+   to act on. A smoother surrogate (`--tpr_alpha 2`), large rho (up to 50) and a bounded
+   feature step (`--step_clip`) did not change this (`outputs/ema_smooth_summary.md`).
+4. **Federated baselines** (`outputs/fl_baselines/summary.md`): FedFair / FedFB reach
+   higher accuracy and lower EO on Credit and Adult; they share model updates and
+   real-data group statistics, whereas this method shares only synthetic data.
+5. **Reuse** (`outputs/reuse_summary.md`): other model classes can be trained on the
+   released synthetic data.
+
+The experimental flags `--ema_init`, `--hg_sign`, `--step_clip` and `--tpr_alpha` all
+default to the original behaviour, so every number above reproduces unchanged.
+
 ## Reproducibility
 
 ```bash
@@ -189,4 +220,5 @@ threaded through the same seeded `numpy.random.Generator`.
 | `docs/PAPER_TABLES.md` | The five paper tables (T1-T5) with per-config numbers. |
 | `docs/COMPARISON.md` | Full our-method-vs-reference-model comparison, convergence investigation, and the two data-prep bugs found/fixed in the reference setup. |
 | `docs/COMPAS_APPLICATION.md` | Professor-facing summary of the 4th application (COMPAS): what it is, why it was added, results. |
+| `outputs/*_summary.md` | Generated summaries of the later experiments (baselines, EMA fix, batch size, reuse). |
 | `docs/CHANGES.md` | Changelog against earlier repo states, with a "how to verify the code is correct" checklist. |

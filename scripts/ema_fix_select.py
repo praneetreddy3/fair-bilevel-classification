@@ -73,8 +73,8 @@ def main():
                 "eo": (np.mean([b["EO_gap"] for b in base]), np.std([b["EO_gap"] for b in base])),
                 "dp": (np.mean([b["extended_metrics"]["DP_gap"] for b in base]), np.std([b["extended_metrics"]["DP_gap"] for b in base])),
                 "eod": (np.mean([b["extended_metrics"]["EOD_gap"] for b in base]), np.std([b["extended_metrics"]["EOD_gap"] for b in base]))}
-        for name, s in {**{f"fix {k}": v for k, v in grid.items()}, **extra}.items():
-            mark = "**yes**" if name == f"fix {sel}" else ""
+        for name, s in {**{f"{PFX} {k}": v for k, v in grid.items()}, **extra}.items():
+            mark = "**yes**" if name == f"{PFX} {sel}" else ""
             lines.append(f"| {ds} | {name} | {s['n']} | {s['val_acc']:.3f} | {s['val_eo']:.3f} | {f(s['acc'])} | "
                          f"{f(s['f1'])} | {f(s['eo'])} | {f(s['dp'])} | {f(s['eod'])} | {mark} |")
     text = "\n".join(lines)

@@ -289,9 +289,9 @@ def client_round_al(
             grad_inf_x0 = grad_inf_x
         grad_tol = outer_tol_xhat * max(1.0, float(grad_inf_x0))
 
-        # grad_X_* = (d^2 Lin/dx dtheta) h = -dPhi/dx (implicit function theorem), so descent on Phi is
-        # x += eta*grad_X ("correct"). "orig" keeps the historical x -= eta*grad_X (ascent on Phi) so
-        # all earlier results stay reproducible.
+        # Feature step. "orig" (default, used for all reported results) is x -= eta*grad_X.
+        # "correct" flips the sign (x += eta*grad_X); it is an experimental variant used only in
+        # scripts/diag_outer_loop.py and was numerically unstable on Credit.
         step = -eta_x if hg_sign == "orig" else eta_x
         if step_clip > 0:   # opt-in: bound every coordinate of the feature step (stability)
             if grad_X_ds is not None:

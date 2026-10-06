@@ -74,3 +74,16 @@ Run these on the machine with the `.venv` (VS Code terminal). Each has a clear p
 6. **Reproducible.** Same `--seed` gives identical numbers every run.
 
 If all six pass, the code is behaving correctly.
+
+## Later additions (October 2026)
+
+All new flags default to the original behaviour; earlier results reproduce unchanged.
+
+- `--ema_init {zero,first}`: initial value of the EMA fairness estimate (`zero` = original,
+  which stops the outer loop after one step; `first` = start at the first observed gap).
+- `--syn_size`, `--save_synthetic`: synthetic batch size; save released synthetic data.
+- `--hg_sign {orig,correct}`, `--step_clip`: experimental feature-step variants used only
+  in the diagnostics (`correct` was numerically unstable on Credit and is not used for any
+  reported number).
+- New scripts: see the `scripts/` list in `README.md`.
+

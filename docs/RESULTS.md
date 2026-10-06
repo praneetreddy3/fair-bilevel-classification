@@ -1,5 +1,9 @@
 # Results Summary — Credit Risk, UCI Adult, Law School & COMPAS (FINAL, post-determinism-fix)
 
+> **Note (October 2026):** these numbers are correct for the files they come from, but see
+> "Later findings" in `README.md`: a rho = 0 control attains similar EO gaps, so the EO
+> reduction is attributable mainly to stratified synthetic sharing rather than the AL penalty.
+
 Final 5-seed runs via `scripts/run_final.sh` (seeds 1-5, `--num_clients 5 --rounds 8
 --K_inner 100 --deterministic true`), per-dataset best settings below. Full tables in
 `docs/PAPER_TABLES.md` (T1 = performance, T2 = fairness); figures via

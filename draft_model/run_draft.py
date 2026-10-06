@@ -156,7 +156,7 @@ def main():
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
     parser.add_argument("--step_clip", type=float, default=0.0, help="max |change| per feature coordinate per outer step (0=off)")
     parser.add_argument("--hg_sign", choices=["orig", "correct"], default="orig",
-                        help="sign of the implicit-gradient feature step; orig = historical (ascent on Phi)")
+                        help="sign of the feature step; orig = default used for all reported results, correct = experimental")
     parser.add_argument("--tpr_tau", type=float, default=0.0)
     parser.add_argument("--ema_beta", type=float, default=0.15)
     parser.add_argument("--use_importance_weighting", type=str2bool, default=True)
