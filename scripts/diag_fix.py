@@ -59,6 +59,8 @@ def main():
     ap.add_argument("--data", choices=["credit", "adult", "law", "compas"], default="law")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--clients", type=int, default=3)
+    ap.add_argument("--hg_sign", choices=["orig", "correct"], default="orig")
+    ap.add_argument("--step_clip", type=float, default=0.0)
     a = ap.parse_args()
 
     cfg = fb.DATASET_CFG[a.data]
@@ -77,7 +79,7 @@ def main():
                                           q_a0y1=B.q_a0y1, q_a1y1=B.q_a1y1, B=B)
         setups.append((data, B, Ds, U))
 
-    print(f"dataset={a.data}  clients={a.clients}  (hard EO / accuracy on client training data, mean over clients)")
+    print(f"dataset={a.data}  hg_sign={a.hg_sign}  step_clip={a.step_clip}  clients={a.clients}  (hard EO / accuracy on client training data, mean over clients)")
     print(f"{'variant':<8}" + "".join(f"{'rho=' + str(r):>18}" for r in RHOS))
     for name, (use_client, sur, gnorm) in VARIANTS.items():
         cells = []
@@ -92,7 +94,7 @@ def main():
                         rho=rho, epsilon_EO=0.0, K_inner=100, J_outer=20, eta_theta=0.05,
                         eta_x=0.02, R=10.0, seed=a.seed, ema_init="first", eo_surrogate=sur,
                         fair_data=(data.X, data.A, data.Y) if use_client else None,
-                        fair_grad_norm=gnorm)
+                        fair_grad_norm=gnorm, hg_sign=a.hg_sign, step_clip=a.step_clip)
                     acc, eo = hard_metrics(theta, data.X, data.A, data.Y)
                 except Exception:
                     acc, eo = np.nan, np.nan

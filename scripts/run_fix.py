@@ -48,6 +48,8 @@ VARIANT_FLAGS = {  # stage 5 fix variants (see scripts/diag_fix.py)
     "AB": ["--fair_set", "client", "--eo_surrogate", "loss_gap"],
     "AC": ["--fair_set", "client", "--fair_grad_norm", "true"],
     "ABC": ["--fair_set", "client", "--eo_surrogate", "loss_gap", "--fair_grad_norm", "true"],
+    "SA": ["--hg_sign", "correct", "--step_clip", "0.05", "--fair_set", "client"],
+    "SAB": ["--hg_sign", "correct", "--step_clip", "0.05", "--fair_set", "client", "--eo_surrogate", "loss_gap"],
 }
 STAGE5_RHO = [1.0, 10.0]
 
@@ -117,7 +119,7 @@ def main():
     ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
-    ap.add_argument("--variant", default="AB", choices=["A", "B", "AB", "AC", "ABC"], help="stage 5 only")
+    ap.add_argument("--variant", default="AB", choices=list(VARIANT_FLAGS), help="stage 5 only")
     a = ap.parse_args()
     jobs = jobs_for(a.stage, a.variant)
     print(f"{len(jobs)} runs ({a.jobs} in parallel)")
