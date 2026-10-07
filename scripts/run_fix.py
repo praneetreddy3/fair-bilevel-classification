@@ -11,6 +11,7 @@ really within epsilon_EO (or J = 20 steps).
   python scripts/run_fix.py --stage 2 --jobs 4   # full validation grid (adds the other configs)
   python scripts/run_fix.py --stage 3 --jobs 4   # sign-corrected feature step (--hg_sign correct), rho grid + control
   python scripts/run_fix.py --stage 5 --variant AB --jobs 4   # a fix variant chosen with scripts/diag_fix.py
+  python scripts/run_fix.py --stage 6 --jobs 4   # final: selected configs + controls + Universum toggle, seeds 1-10
   python scripts/run_fix.py --stage 1 --dry_run  # print commands only
 
 Runs whose result file exists are skipped. Settings other than the ones named are the reported ones
@@ -55,8 +56,24 @@ VARIANT_FLAGS = {  # stage 5 fix variants (see scripts/diag_fix.py)
 STAGE5_RHO = [1.0, 10.0, 50.0]
 
 
+FINAL2 = {  # stage 6: configurations selected on validation in stage 5 (see outputs/ema_vSA*_summary.md)
+    "credit": ("SAC", "10.0"), "adult": ("SAC", "10.0"), "law": ("SA", "50.0"), "compas": ("SA", "50.0"),
+}
+
+
 def jobs_for(stage, variant="AB"):
     jobs = []
+    if stage == 6:   # final runs: selected config + its rho=0 control, seeds 1-10; Universum toggled, seeds 1-10
+        for ds, (v, rho) in FINAL2.items():
+            vf, cfg = VARIANT_FLAGS[v], CFG[ds]
+            tog = [a for a in cfg if a != "--no_universum"] if "--no_universum" in cfg else cfg + ["--no_universum"]
+            for s in range(1, 11):
+                base = ["--seed", str(s), *COMMON, *vf, "--epsilon_EO", "0.02", "--data", ds]
+                jobs.append((f"draft_results_{ds}_final2_seed{s}.json", base + cfg + ["--rho", rho]))
+                jobs.append((f"draft_results_{ds}_final2ctl_seed{s}.json", base + cfg + ["--rho", "0.0", "--fairness_off"]))
+                if ds != "law":   # Law forms no Universum points, so toggling it changes nothing
+                    jobs.append((f"draft_results_{ds}_final2univ_seed{s}.json", base + tog + ["--rho", rho]))
+        return jobs
     if stage == 5:   # one fix variant: its own rho = 0 control + STAGE5_RHO, eps 0.02, all datasets
         vf = VARIANT_FLAGS[variant]
         for ds, cfg in CFG.items():
@@ -117,7 +134,7 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5, 6], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
     ap.add_argument("--variant", default="AB", choices=list(VARIANT_FLAGS), help="stage 5 only")
