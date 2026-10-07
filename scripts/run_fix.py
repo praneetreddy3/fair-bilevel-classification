@@ -73,6 +73,12 @@ def jobs_for(stage, variant="AB"):
                 jobs.append((f"draft_results_{ds}_final2ctl_seed{s}.json", base + cfg + ["--rho", "0.0", "--fairness_off"]))
                 if ds != "law":   # Law forms no Universum points, so toggling it changes nothing
                     jobs.append((f"draft_results_{ds}_final2univ_seed{s}.json", base + tog + ["--rho", rho]))
+            # Table V diagnostic (local vs pooled EO, non-IID, post-server DP sigma=1), seed 1 only,
+            # same protocol as the earlier *_dpcheck_seed1.json runs but with the corrected method
+            jobs.append((f"draft_results_{ds}_final2noniid_seed1.json",
+                         ["--seed", "1", *COMMON, *vf, "--epsilon_EO", "0.02", "--data", ds, *cfg, "--rho", rho,
+                          "--partition", "dirichlet", "--dirichlet_alpha", "0.5", "--dp_variant", "post_server",
+                          "--dp_sigma", "1.0", "--report_client_eo", "true"]))
         return jobs
     if stage == 5:   # one fix variant: its own rho = 0 control + STAGE5_RHO, eps 0.02, all datasets
         vf = VARIANT_FLAGS[variant]
