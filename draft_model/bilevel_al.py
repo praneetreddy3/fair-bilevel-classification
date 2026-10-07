@@ -109,6 +109,8 @@ def client_round_al(
     hg_sign: str = "orig",
     diag: list = None,
     step_clip: float = 0.0,
+    fair_data: tuple = None,
+    fair_grad_norm: bool = False,
     tpr_tau: float = 0.0,
     ema_beta: float = 0.15,
     use_importance_weighting: bool = True,
@@ -201,7 +203,11 @@ def client_round_al(
 
         # Outer: evaluate fairness on real minibatch B (plus optional buffer fill for missing positives).
         B_X_fair, B_A_fair, B_Y_fair = B.X, B.A, B.Y
-        if use_rolling_buffer:
+        if fair_data is not None:
+            # opt-in: evaluate the EO surrogate on ALL of the client's qualified examples
+            # (the minibatch has only ~5 positives per group, which makes the surrogate flat)
+            B_X_fair, B_A_fair, B_Y_fair = fair_data
+        elif use_rolling_buffer:
             need_append = []
             for s in (0, 1):
                 has_pos = np.any((B_A_fair == s) & (B_Y_fair == 1))
@@ -236,7 +242,12 @@ def client_round_al(
         if diag is not None:
             diag.append({"j": j, "g": g_val.item(), "gl": v.norm().item(),
                          "gg": theta_star.grad.norm().item(), "lam": float(lam)})
-        v = v + lam * theta_star.grad + rho * g_val.detach() * theta_star.grad
+        grad_g = theta_star.grad
+        if fair_grad_norm:
+            # opt-in: rescale grad g to the size of grad L_out so the fairness term is not
+            # drowned out (rho and lam then set the relative weight directly)
+            grad_g = grad_g * (v.norm() / (grad_g.norm() + 1e-12))
+        v = v + lam * grad_g + rho * g_val.detach() * grad_g
         theta_star.grad = None
 
         # Solve h = H⁻¹v via CG (H = ∇²_θθ Lin at theta*): h is the implicit-differentiation

@@ -154,6 +154,10 @@ def main():
                               "(maximise balanced accuracy) and apply it to the test set.")
     parser.add_argument("--use_tpr_gap", type=str2bool, default=True)
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
+    parser.add_argument("--fair_set", choices=["batch", "client"], default="batch",
+                        help="where the EO surrogate is evaluated: client minibatch (default) or all client data")
+    parser.add_argument("--fair_grad_norm", type=str2bool, default=False,
+                        help="rescale the fairness gradient to the size of the outer-loss gradient")
     parser.add_argument("--step_clip", type=float, default=0.0, help="max |change| per feature coordinate per outer step (0=off)")
     parser.add_argument("--hg_sign", choices=["orig", "correct"], default="orig",
                         help="sign of the feature step; orig = default used for all reported results, correct = experimental")
@@ -171,7 +175,7 @@ def main():
                               "partitions the test set non-IID (Dirichlet, same alpha/clients "
                               "as training) and compares each shard's EO gap/TPR/FPR to the "
                               "pooled (whole-test-set) EO gap using the trained global theta.")
-    parser.add_argument("--eo_surrogate", choices=["tpr_gap", "score_gap"], default="tpr_gap",
+    parser.add_argument("--eo_surrogate", choices=["tpr_gap", "score_gap", "loss_gap"], default="tpr_gap",
                          help="EO training surrogate: 'tpr_gap' (shipped/original, smooth "
                               "|TPR_1-TPR_0|) or 'score_gap' (paper-revision proposal, signed "
                               "mu_1-mu_0, no sigmoid/threshold).")
@@ -313,6 +317,8 @@ def main():
                     tpr_alpha=args.tpr_alpha,
                     hg_sign=args.hg_sign,
                     step_clip=args.step_clip,
+                    fair_data=(data.X, data.A, data.Y) if args.fair_set == "client" else None,
+                    fair_grad_norm=args.fair_grad_norm,
                     tpr_tau=args.tpr_tau,
                     ema_beta=args.ema_beta,
                     use_importance_weighting=args.use_importance_weighting,
@@ -412,6 +418,8 @@ def main():
             "tpr_alpha": args.tpr_alpha,
             "hg_sign": args.hg_sign,
             "step_clip": args.step_clip,
+            "fair_set": args.fair_set,
+            "fair_grad_norm": args.fair_grad_norm,
             "tpr_tau": args.tpr_tau,
             "ema_beta": args.ema_beta,
             "use_importance_weighting": args.use_importance_weighting,

@@ -10,6 +10,7 @@ really within epsilon_EO (or J = 20 steps).
   python scripts/run_fix.py --stage 1 --jobs 4   # 40 runs: reported (rho, eps) + rho=0 control
   python scripts/run_fix.py --stage 2 --jobs 4   # full validation grid (adds the other configs)
   python scripts/run_fix.py --stage 3 --jobs 4   # sign-corrected feature step (--hg_sign correct), rho grid + control
+  python scripts/run_fix.py --stage 5 --variant AB --jobs 4   # a fix variant chosen with scripts/diag_fix.py
   python scripts/run_fix.py --stage 1 --dry_run  # print commands only
 
 Runs whose result file exists are skipped. Settings other than the ones named are the reported ones
@@ -41,8 +42,27 @@ GRID_RHO = [0.05, 0.1, 0.5, 2.0]
 GRID_EPS = [0.1, 0.02]
 
 
-def jobs_for(stage):
+VARIANT_FLAGS = {  # stage 5 fix variants (see scripts/diag_fix.py)
+    "A": ["--fair_set", "client"],
+    "B": ["--eo_surrogate", "loss_gap"],
+    "AB": ["--fair_set", "client", "--eo_surrogate", "loss_gap"],
+    "AC": ["--fair_set", "client", "--fair_grad_norm", "true"],
+    "ABC": ["--fair_set", "client", "--eo_surrogate", "loss_gap", "--fair_grad_norm", "true"],
+}
+STAGE5_RHO = [1.0, 10.0]
+
+
+def jobs_for(stage, variant="AB"):
     jobs = []
+    if stage == 5:   # one fix variant: its own rho = 0 control + STAGE5_RHO, eps 0.02, all datasets
+        vf = VARIANT_FLAGS[variant]
+        for ds, cfg in CFG.items():
+            for s in SEEDS:
+                base = ["--data", ds, *cfg, "--seed", str(s), *COMMON, *vf, "--epsilon_EO", "0.02"]
+                jobs.append((f"draft_results_{ds}_v{variant}ctl_seed{s}.json", base + ["--rho", "0.0", "--fairness_off"]))
+                for rho in STAGE5_RHO:
+                    jobs.append((f"draft_results_{ds}_v{variant}_rho{rho}_eps0.02_seed{s}.json", base + ["--rho", str(rho)]))
+        return jobs
     if stage == 4:   # smooth surrogate + big rho + bounded step, Law and Adult only
         for ds in ("law", "adult"):
             for s in SEEDS:
@@ -94,11 +114,12 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
+    ap.add_argument("--variant", default="AB", choices=["A", "B", "AB", "AC", "ABC"], help="stage 5 only")
     a = ap.parse_args()
-    jobs = jobs_for(a.stage)
+    jobs = jobs_for(a.stage, a.variant)
     print(f"{len(jobs)} runs ({a.jobs} in parallel)")
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for msg in ex.map(lambda j: run_one(j, a.dry_run), jobs):

@@ -144,6 +144,25 @@ def compute_score_gap_surrogate(
     return mu1 - mu0
 
 
+def compute_loss_gap_surrogate(theta, X, A, Y):
+    """
+    Non-saturating EO surrogate: gap between the groups' mean logistic loss on the qualified
+    slice, g = sqrt((m_1 - m_0)^2 + eps), m_s = mean(softplus(-f_theta(x,s)) | Y=1, A=s).
+    Unlike the sigmoid TPR gap its gradient does not vanish for misclassified positives, and
+    unlike the raw score gap it grows only linearly in the score of those points.
+    """
+    y = np.asarray(Y); a = np.asarray(A); Xn = np.asarray(X)
+    m = []
+    for s_group in (0, 1):
+        mask = (y == 1) & (a == s_group)
+        if not np.any(mask):
+            return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
+        logits = f_theta(theta, pack_xa(Xn[mask], a[mask]).to(theta.device))
+        m.append(torch.nn.functional.softplus(-logits).mean())
+    diff = m[1] - m[0]
+    return torch.sqrt(diff * diff + 1e-12)
+
+
 def g_EO(
     theta: torch.Tensor,
     X: np.ndarray,
@@ -162,6 +181,8 @@ def g_EO(
         return torch.tensor(0.0, dtype=torch.float32, device=theta.device)
     if surrogate == "score_gap":
         return compute_score_gap_surrogate(theta, X, A, Y)
+    if surrogate == "loss_gap":
+        return compute_loss_gap_surrogate(theta, X, A, Y)
     return compute_tpr_gap_surrogate(theta, X, A, Y, tau=tau, alpha=alpha)
 
 
