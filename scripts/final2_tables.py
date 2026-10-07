@@ -77,12 +77,19 @@ def main():
             for lab, rs in ((f"{'On' if on_label == 'Off' else 'Off'} (reported)", ours), (on_label, univ)):
                 t3.append(f"{name} & {lab} & " + " & ".join(ms(col(rs, 'pipeline', k)) for k in ("acc", "f1", "eo", "dp", "eod")) + " \\\\")
             t3.append("\\midrule")
+    t5 = []
+    for ds, name in DS:
+        f = os.path.join(OUT, f"draft_results_{ds}_final2noniid_seed1.json")
+        if os.path.isfile(f):
+            c = json.load(open(f))["non_iid_eo_check"]
+            t5.append(f"{name} & {c['pooled']['EO_gap']:.3f} & {c['mean_local_EO_gap']:.3f} & {c['max_local_EO_gap']:.3f} \\\\")
     md_text = ("| Dataset | seeds | EO control (rho=0) | EO ours | paired diff (mean ± sd) | seeds better | t | p | acc diff |\n"
                "|---|---|---|---|---|---|---|---|---|\n" + "\n".join(md))
     tex = ("% Table I rows (Acc, F1, Bal. Acc., PR-AUC)\n" + "\n".join(t1) +
            "\n\n% Table II rows (DemP, EO, EOD)\n" + "\n".join(t2) +
            "\n\n% Table III rows: Universum toggle (Acc, F1, EO, DemP, EOD); Law forms no Universum points\n" + "\n".join(t3) +
-           "\n\n% Table IV rows: AL vs rho=0 control (EO control, EO ours, paired diff, seeds better, p, acc diff)\n" + "\n".join(t4) + "\n")
+           "\n\n% Table IV rows: AL vs rho=0 control (EO control, EO ours, paired diff, seeds better, p, acc diff)\n" + "\n".join(t4) +
+           "\n\n% Table V rows: pooled vs local EO (non-IID, post-server DP), seed 1\n" + "\n".join(t5) + "\n")
     open(os.path.join(OUT, "final2_summary.md"), "w", encoding="utf-8").write(md_text + "\n")
     open(os.path.join(OUT, "final2_tables.tex"), "w", encoding="utf-8").write(tex)
     print(md_text)
