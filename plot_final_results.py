@@ -7,10 +7,12 @@ paper figure once there are 50+ runs in outputs/).
 Reads outputs/draft_results_{dataset}_final_seed{1..5}.json for each dataset in DATASETS
 (silently skips a dataset with no final-seed files yet, e.g. before compas has been run).
 
-Run from project root: python plot_final_results.py
-Writes: outputs/final_pareto.png, outputs/final_bars.png
+Run from project root: python plot_final_results.py            (original results, *_final_*)
+                        python plot_final_results.py final2     (corrected method, *_final2_*, 10 seeds)
+Writes: outputs/<tag>_pareto.png, outputs/<tag>_bars.png
 """
 import os
+import sys
 import glob
 import json
 
@@ -21,13 +23,14 @@ import matplotlib.pyplot as plt
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 
+TAG = sys.argv[1] if len(sys.argv) > 1 else "final"
 DATASETS = ["credit", "adult", "law", "compas"]
 COLORS = {"credit": "#2a9d8f", "adult": "#e76f51", "law": "#264653", "compas": "#8e44ad"}
 DISPLAY = {"credit": "Credit", "adult": "Adult", "law": "Law", "compas": "COMPAS"}
 
 
 def load_dataset(ds):
-    files = sorted(glob.glob(os.path.join(OUT, f"draft_results_{ds}_final_seed*.json")))
+    files = sorted(glob.glob(os.path.join(OUT, f"draft_results_{ds}_{TAG}_seed*.json")))
     runs = []
     for f in files:
         try:
@@ -78,11 +81,12 @@ def main():
                      markeredgecolor="black", label=f"{DISPLAY[ds]} — baseline", zorder=3)
     ax.set_xlabel("EO gap (%) — lower is fairer")
     ax.set_ylabel("Accuracy (%) — higher is better")
-    ax.set_title("Accuracy-Fairness trade-off — final results (mean +/- std, 5 seeds)", fontweight="bold")
+    n = min(d["n_seeds"] for d in data.values())
+    ax.set_title(f"Accuracy-Fairness trade-off — final results (mean +/- std, {n} seeds)", fontweight="bold")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=9, loc="best")
     fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "final_pareto.png"), dpi=200, bbox_inches="tight")
+    fig.savefig(os.path.join(OUT, f"{TAG}_pareto.png"), dpi=200, bbox_inches="tight")
     plt.close(fig)
 
     # ---- Grouped bars: accuracy + EO gap, baseline vs pipeline, one group per dataset. ----
@@ -120,12 +124,12 @@ def main():
     a2.set_title("EO gap (%) — lower is fairer", fontweight="bold")
     a2.legend(fontsize=9); a2.grid(axis="y", alpha=0.3)
 
-    fig.suptitle("Final results (mean +/- std, 5 seeds)", fontweight="bold")
+    fig.suptitle(f"Final results (mean +/- std, {n} seeds)", fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(os.path.join(OUT, "final_bars.png"), dpi=200, bbox_inches="tight")
+    fig.savefig(os.path.join(OUT, f"{TAG}_bars.png"), dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    print(f"Wrote outputs/final_pareto.png and outputs/final_bars.png "
+    print(f"Wrote outputs/{TAG}_pareto.png and outputs/{TAG}_bars.png "
           f"for datasets: {', '.join(data.keys())}")
 
 
