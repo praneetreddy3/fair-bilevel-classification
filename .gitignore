@@ -44,3 +44,6 @@ Thumbs.db
 
 # large saved synthetic pools (regenerate with --save_synthetic true)
 outputs/*_synthetic.npz
+
+# LaTeX outputs are shared by email, not kept in the repository
+*.tex
