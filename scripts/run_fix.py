@@ -49,9 +49,10 @@ VARIANT_FLAGS = {  # stage 5 fix variants (see scripts/diag_fix.py)
     "AC": ["--fair_set", "client", "--fair_grad_norm", "true"],
     "ABC": ["--fair_set", "client", "--eo_surrogate", "loss_gap", "--fair_grad_norm", "true"],
     "SA": ["--hg_sign", "correct", "--step_clip", "0.05", "--fair_set", "client"],
+    "SAC": ["--hg_sign", "correct", "--step_clip", "0.05", "--fair_set", "client", "--fair_grad_norm", "true"],
     "SAB": ["--hg_sign", "correct", "--step_clip", "0.05", "--fair_set", "client", "--eo_surrogate", "loss_gap"],
 }
-STAGE5_RHO = [1.0, 10.0]
+STAGE5_RHO = [1.0, 10.0, 50.0]
 
 
 def jobs_for(stage, variant="AB"):

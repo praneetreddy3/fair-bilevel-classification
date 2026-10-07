@@ -41,7 +41,7 @@ def summ(runs):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--prefix", default="fix", choices=["fix", "sfix", "smooth", "vA", "vB", "vAB", "vAC", "vABC", "vSA", "vSAB"])
+    ap = argparse.ArgumentParser(); ap.add_argument("--prefix", default="fix", choices=["fix", "sfix", "smooth", "vA", "vB", "vAB", "vAC", "vABC", "vSA", "vSAB", "vSAC"])
     PFX = ap.parse_args().prefix
     f = lambda p: f"{p[0]:.3f}±{p[1]:.3f}"
     hdr = ("| Dataset | Setting | n | val Acc | val EO | test Acc | test F1 | test EO | test DemP | test EOD | selected |\n"
