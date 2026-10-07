@@ -156,6 +156,8 @@ def main():
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
     parser.add_argument("--fair_set", choices=["batch", "client"], default="batch",
                         help="where the EO surrogate is evaluated: client minibatch (default) or all client data")
+    parser.add_argument("--hg_weighted", type=str2bool, default=False,
+                        help="use the importance-weighted inner loss in the implicit derivatives (consistent with the inner fit)")
     parser.add_argument("--fair_grad_norm", type=str2bool, default=False,
                         help="rescale the fairness gradient to the size of the outer-loss gradient")
     parser.add_argument("--step_clip", type=float, default=0.0, help="max |change| per feature coordinate per outer step (0=off)")
@@ -319,6 +321,7 @@ def main():
                     step_clip=args.step_clip,
                     fair_data=(data.X, data.A, data.Y) if args.fair_set == "client" else None,
                     fair_grad_norm=args.fair_grad_norm,
+                    hg_weighted=args.hg_weighted,
                     tpr_tau=args.tpr_tau,
                     ema_beta=args.ema_beta,
                     use_importance_weighting=args.use_importance_weighting,
@@ -420,6 +423,7 @@ def main():
             "step_clip": args.step_clip,
             "fair_set": args.fair_set,
             "fair_grad_norm": args.fair_grad_norm,
+            "hg_weighted": args.hg_weighted,
             "tpr_tau": args.tpr_tau,
             "ema_beta": args.ema_beta,
             "use_importance_weighting": args.use_importance_weighting,

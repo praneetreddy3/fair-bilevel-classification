@@ -111,6 +111,7 @@ def client_round_al(
     step_clip: float = 0.0,
     fair_data: tuple = None,
     fair_grad_norm: bool = False,
+    hg_weighted: bool = False,
     tpr_tau: float = 0.0,
     ema_beta: float = 0.15,
     use_importance_weighting: bool = True,
@@ -250,12 +251,21 @@ def client_round_al(
         v = v + lam * grad_g + rho * g_val.detach() * grad_g
         theta_star.grad = None
 
+        def _ds_loss(Xa, th):
+            # Synthetic-data loss used for the implicit derivatives. hg_weighted=True uses the same
+            # importance-weighted loss the inner Adam loop minimises (consistent implicit function
+            # theorem); False (default, original) uses the unweighted mean.
+            per = torch.log(1 + torch.exp(-(2*y_ds-1)*(Xa@th).squeeze(-1).clamp(min=-50)))
+            if hg_weighted:
+                return (per * ds_weights_t).sum() / (ds_weights_t.sum() + 1e-12)
+            return per.mean()
+
         # Solve h = H⁻¹v via CG (H = ∇²_θθ Lin at theta*): h is the implicit-differentiation
         # direction used below to propagate ∇_θΦ back onto the Ds/U features.
         def Hvp(h):
             Xa_ds = torch.cat([X_ds, torch.tensor(Ds.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
             Xa_u = torch.cat([X_u, torch.tensor(U.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
-            loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*(Xa_ds@theta_star).squeeze(-1).clamp(min=-50))).mean()
+            loss_ds = _ds_loss(Xa_ds, theta_star)
             reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
             L = loss_ds + reg
             if n_u > 0 and Ds.Delta_s > 0:
@@ -271,7 +281,7 @@ def client_round_al(
         # Implicit gradient: update synthetic and Universum features
         Xa_ds = torch.cat([X_ds, torch.tensor(Ds.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
         Xa_u = torch.cat([X_u, torch.tensor(U.A.reshape(-1, 1), dtype=torch.float32, device=device)], dim=1)
-        loss_ds = torch.log(1 + torch.exp(-(2*y_ds-1)*(Xa_ds@theta_star).squeeze(-1).clamp(min=-50))).mean()
+        loss_ds = _ds_loss(Xa_ds, theta_star)
         reg = (lambda_theta_in/(2*(d_plus_1**2)))*((theta_star-zeta_t)**2).sum()
         Lin_for_x = loss_ds + reg
         if n_u > 0 and Ds.Delta_s > 0:
@@ -290,6 +300,8 @@ def client_round_al(
         w = (grad_theta_lin * h).sum()
         grad_X_ds = torch.autograd.grad(w, X_ds, allow_unused=True, retain_graph=True)[0]
         grad_X_u = torch.autograd.grad(w, X_u, allow_unused=True)[0]
+        if diag is not None and diag:
+            diag[-1]["grad_X_ds"] = None if grad_X_ds is None else grad_X_ds.detach().cpu().numpy().copy()
 
         grad_inf_x = 0.0
         if grad_X_ds is not None:
