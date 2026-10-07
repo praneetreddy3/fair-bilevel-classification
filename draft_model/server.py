@@ -132,14 +132,19 @@ def pick_threshold(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarra
     return best_t
 
 
-def compute_extended_metrics(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray) -> dict:
+def compute_extended_metrics(theta: np.ndarray, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
+                             threshold: float = 0.0) -> dict:
     """Imbalance/fairness metrics for paper tables: PR-AUC, ROC-AUC, macro-F1,
     balanced accuracy, demographic-parity gap (DP_gap), equalized-odds gap (EOD_gap).
+
+    The threshold-dependent metrics (macro-F1, balanced accuracy, DP_gap, EOD_gap) use the
+    logit cutoff ``threshold``. Default 0.0 is the original behaviour; pass the same tuned
+    threshold as compute_eo_gap_and_accuracy so all reported metrics refer to one classifier.
     """
     Xa = np.hstack([X, A.reshape(-1, 1)])
     logits = Xa @ theta
     probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -50, 50)))
-    pred = (logits > 0).astype(np.float64)
+    pred = (logits > threshold).astype(np.float64)
 
     has_both_classes = len(np.unique(Y)) > 1
     pr_auc = float(average_precision_score(Y, probs)) if has_both_classes else 0.0

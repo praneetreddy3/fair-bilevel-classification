@@ -174,9 +174,9 @@ if __name__ == "__main__":
     print(f"  TEST: acc={selected['test_acc_m']:.4f}+/-{selected['test_acc_s']:.4f}  "
           f"EO={selected['test_eo_m']:.4f}+/-{selected['test_eo_s']:.4f}")
     print("\nUpdate scripts/run_final.sh's COMPAS block to match, e.g.:")
-    print(f"  python -m draft_model.run_draft --data compas --sensitive race \\")
-    print(f"    --add_intercept true --tune_threshold true \\")
+    print("  python -m draft_model.run_draft --data compas --sensitive race \\")
+    print("    --add_intercept true --tune_threshold true \\")
     print(f"    --dp_variant none --rho {selected['rho']} --epsilon_EO 0.1{uni_flag} "
           f"--seed $s $COMMON \\")
-    print(f"    --results_file draft_results_compas_final_seed$s.json")
+    print("    --results_file draft_results_compas_final_seed$s.json")
     print("\nThen: python build_tables.py && python plot_final_results.py && python verify.py")

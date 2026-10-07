@@ -55,6 +55,7 @@ def draw_original_minibatch(
         q_a1y1 = cmin_k
         q_a1y0 = max(0, q_a1y0 - need)
 
+    # Rounding residual is absorbed by the (S=0, Y=0) stratum.
     total = q_a0y0 + q_a0y1 + q_a1y0 + q_a1y1
     if total != size:
         diff = size - total
@@ -179,7 +180,7 @@ def build_universum_templates(
     Size: |U| = min(Δˢ, |Dˢ|, Δₖ). Sensitive attribute is split as evenly as
     possible across S={0,1}. For each group s, create |U_s| points as
     midpoints between:
-      - a positive point with A=s (prefer minority-positive within group), and
+      - a positive point with A=s (fallback: any positive), and
       - a negative point from the opposite group A=1-s (fallback: any negative).
 
     This keeps Universum balanced across sensitive groups while targeting class
@@ -201,12 +202,6 @@ def build_universum_templates(
     # Place points by group-conditioned midpoint construction.
     X = np.zeros((U_size, d), dtype=np.float64)
     if B is not None and len(B.Y) > 0:
-        # Optional group-level minority-positive preference.
-        # If unavailable/tied, fallback is simply positives from the same group.
-        prefer_group_minority = None
-        if q_a0y1 is not None and q_a1y1 is not None and q_a0y1 != q_a1y1:
-            prefer_group_minority = 0 if q_a0y1 < q_a1y1 else 1
-
         X_pos_by_group = {
             0: B.X[(B.A == 0) & (B.Y == 1)],
             1: B.X[(B.A == 1) & (B.Y == 1)],
@@ -226,13 +221,9 @@ def build_universum_templates(
             if X_pos.shape[0] == 0:
                 X_pos = B.X[B.Y == 1]
 
-            # If global minority-positive group exists and has positives, prefer it when aligned.
-            if (
-                prefer_group_minority is not None
-                and prefer_group_minority == s
-                and X_pos_by_group[s].shape[0] > 0
-            ):
-                X_pos = X_pos_by_group[s]
+            # (A "prefer the minority-positive group" branch used to follow here; it re-selected
+            # the same in-group positives chosen above, so it had no effect and was removed.
+            # Behaviour and random-number use are unchanged.)
 
             # Negative source: prefer opposite group negatives, fallback any negative.
             X_neg = X_neg_by_group[other]

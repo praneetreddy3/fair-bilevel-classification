@@ -36,7 +36,11 @@ def logistic_loss_per_sample(y: torch.Tensor, logits: torch.Tensor) -> torch.Ten
 
 def L_base(theta: torch.Tensor, X: np.ndarray, A: np.ndarray, Y: np.ndarray,
            zeta: torch.Tensor, lambda_theta: float, d_plus_1: int) -> torch.Tensor:
-    """Eq. 2: (1/|D|) Σ ℓ(y, f_θ(x,a)) + λ_θ/(2(d+1)²) ||θ−ζ||²."""
+    """Eq. 2: (1/|D|) Σ ℓ(y, f_θ(x,a)) + (λ_θ/2) ||θ−ζ||².
+
+    Note: this (used for L_out) scales the ridge by λ_θ/2 as in the paper, whereas the inner
+    loop in bilevel_al.py and the server fit in server.py use λ_θ/(2(d+1)²).
+    """
     Xa = pack_xa(X, A).to(theta.device)
     y = _to_torch(Y, device=theta.device)
     logits = f_theta(theta, Xa)

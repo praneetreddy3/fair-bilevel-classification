@@ -261,7 +261,6 @@ def run_method(method, cfg, data):
     # global positive-group counts (aggregated once; needed by FedFB/FedFair weighting)
     n_pos = {s: sum(int(((A == s) & (Y == 1)).sum()) for _, A, Y in clients) for s in (0, 1)}
     n_pos_total = n_pos[0] + n_pos[1]
-    n_total = sizes.sum()
 
     fairfed_w = size_w.copy()
     fedfb_lam = np.array([n_pos[0] / n_pos_total, n_pos[1] / n_pos_total])

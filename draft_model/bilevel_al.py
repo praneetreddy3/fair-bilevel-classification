@@ -74,8 +74,12 @@ def importance_weights(A: np.ndarray, Y: np.ndarray, clip_value: float = 10.0) -
 
 def rolling_positive_buffer(B_X: np.ndarray, B_A: np.ndarray, B_Y: np.ndarray, buffer_size: int = 50) -> dict:
     """
-    Build/refresh a simple rolling buffer of positive examples per group from B.
-    Returns {0: np.ndarray, 1: np.ndarray} of feature rows.
+    Positive examples per group taken from B itself. Returns {0: rows, 1: rows}.
+
+    Note: because the buffer is built from the same minibatch B it is meant to fill, it can
+    never supply positives for a group that B lacks, so the "buffer fill" in client_round_al
+    has no effect (the stratified design already guarantees >= 5 positives per group in B
+    whenever the client has them). Kept so earlier results reproduce exactly.
     """
     out = {}
     for s in (0, 1):
@@ -202,7 +206,7 @@ def client_round_al(
 
         theta_star = theta.detach().clone().requires_grad_(True)
 
-        # Outer: evaluate fairness on real minibatch B (plus optional buffer fill for missing positives).
+        # Outer: evaluate fairness on real minibatch B (or all client data with fair_data).
         B_X_fair, B_A_fair, B_Y_fair = B.X, B.A, B.Y
         if fair_data is not None:
             # opt-in: evaluate the EO surrogate on ALL of the client's qualified examples
@@ -312,9 +316,10 @@ def client_round_al(
             grad_inf_x0 = grad_inf_x
         grad_tol = outer_tol_xhat * max(1.0, float(grad_inf_x0))
 
-        # Feature step. "orig" (default, used for all reported results) is x -= eta*grad_X.
-        # "correct" flips the sign (x += eta*grad_X); it is an experimental variant used only in
-        # scripts/diag_outer_loop.py and was numerically unstable on Credit.
+        # Feature step. grad_X = d/dx[(grad_theta Lin) . h]; by the implicit function theorem
+        # dPhi/dx = -grad_X. "orig" (default, used for all reported results) is x -= eta*grad_X,
+        # which moves UP Phi; "correct" is x += eta*grad_X (descent on Phi). Verify with
+        # scripts/check_hypergrad.py. Use --step_clip with "correct" for numerical stability.
         step = -eta_x if hg_sign == "orig" else eta_x
         if step_clip > 0:   # opt-in: bound every coordinate of the feature step (stability)
             if grad_X_ds is not None:

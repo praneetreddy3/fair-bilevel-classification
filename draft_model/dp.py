@@ -95,11 +95,12 @@ def analytic_gaussian_epsilon(sigma: float, clip_min: float, clip_max: float,
     Sensitivity: one client's feature row changing (the standard "remove/replace one
     record" neighboring-dataset definition) can move the released vector by at most the
     L2 diameter of the per-dimension clip box, i.e. sqrt(d) * (clip_max - clip_min).
-    Uses the standard analytic Gaussian-mechanism bound:
+    Uses the classical Gaussian-mechanism bound (Dwork & Roth, Thm A.1):
         epsilon = (sensitivity / sigma) * sqrt(2 * ln(1.25 / delta))
-    This is the textbook (Dwork & Roth) bound, not the tighter numeric/moments-accountant
-    analysis -- adequate for reporting a defensible order-of-magnitude budget, not a
-    publication-grade tight accountant.
+    This is NOT the "analytic Gaussian mechanism" of Balle & Wang (2018), and the classical
+    bound is only proven for epsilon < 1, so the large values it gives here are indicative
+    only. It also measures privacy with respect to the released synthetic features, not
+    directly with respect to the original records they were optimised from.
     """
     if sigma <= 0:
         return float("inf")
@@ -130,9 +131,9 @@ def composed_epsilon_advanced(epsilon_per_release: float, num_releases: int,
 
 def report_privacy_budget(cfg: DPConfig, d: int, num_rounds: int, num_clients: int,
                           delta: float = 1e-5) -> dict:
-    """Full budget summary for a T-round, K-client run releasing one noised payload
-    per client per round (T*K total releases under pre_server DP; K under post_server;
-    T*K + K under both -- see cfg.variant)."""
+    """Budget summary for a T-round, K-client run: T*K releases under pre_server DP (one
+    noised payload per client per round), T under post_server (one noised aggregate per
+    round), T*K + T under both."""
     if not cfg.is_enabled():
         return {"enabled": False}
     eps1 = analytic_gaussian_epsilon(cfg.sigma, cfg.clip_min, cfg.clip_max, d, delta=delta)

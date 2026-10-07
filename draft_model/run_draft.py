@@ -154,6 +154,10 @@ def main():
                               "(maximise balanced accuracy) and apply it to the test set.")
     parser.add_argument("--use_tpr_gap", type=str2bool, default=True)
     parser.add_argument("--tpr_alpha", type=float, default=10.0)
+    parser.add_argument("--server_pool", choices=["round", "cumulative"], default="round",
+                        help="server training set each round: that round's synthetic payloads only "
+                             "(default, original; warm-started from the previous global model) or all "
+                             "synthetic data received so far (the cumulative S_1:t of Algorithm 1)")
     parser.add_argument("--fair_set", choices=["batch", "client"], default="batch",
                         help="where the EO surrogate is evaluated: client minibatch (default) or all client data")
     parser.add_argument("--hg_weighted", type=str2bool, default=False,
@@ -290,6 +294,7 @@ def main():
     rho = 0.0 if args.fairness_off else args.rho
     round_logs = []
     pool_X, pool_A, pool_Y = [], [], []
+    cum_X, cum_A, cum_Y = [], [], []   # used only with --server_pool cumulative
 
     for t in range(args.rounds):
         round_payloads = []
@@ -355,6 +360,9 @@ def main():
         X_agg, A_agg, Y_agg = aggregate_payloads(payloads_for_server, dp_config=dp_cfg, rng=rng)
         if args.save_synthetic and len(X_agg) > 0:
             pool_X.append(X_agg.copy()); pool_A.append(A_agg.copy()); pool_Y.append(Y_agg.copy())
+        if args.server_pool == "cumulative" and len(X_agg) > 0:
+            cum_X.append(X_agg); cum_A.append(A_agg); cum_Y.append(Y_agg)
+            X_agg, A_agg, Y_agg = np.vstack(cum_X), np.concatenate(cum_A), np.concatenate(cum_Y)
         if len(X_agg) == 0:
             theta_glob = zeta.copy()
         else:
@@ -388,8 +396,13 @@ def main():
         theta_baseline, X_test, A_test, Y_test, threshold=thr_base
     )
 
+    # "extended_metrics" keeps the original threshold-0 values (as in earlier result files);
+    # "extended_metrics_thr" uses the same tuned threshold as accuracy/F1/EO_gap, so every
+    # metric in the tables refers to the same classifier. (Identical when tune_threshold=false.)
     extended_pipeline = compute_extended_metrics(theta_glob, X_test, A_test, Y_test)
     extended_baseline = compute_extended_metrics(theta_baseline, X_test, A_test, Y_test)
+    extended_pipeline_thr = compute_extended_metrics(theta_glob, X_test, A_test, Y_test, threshold=thr_pipe)
+    extended_baseline_thr = compute_extended_metrics(theta_baseline, X_test, A_test, Y_test, threshold=thr_base)
 
     non_iid_eo_check = None
     if args.report_client_eo:
@@ -412,6 +425,7 @@ def main():
             "accuracy": acc_baseline, "F1_score": f1_baseline, "EO_gap": eo_baseline,
             "TPR_group0": tpr0_b, "TPR_group1": tpr1_b,
             "extended_metrics": extended_baseline,
+            "extended_metrics_thr": extended_baseline_thr,
         },
         "pipeline": {
             "accuracy": acc, "F1_score": f1, "EO_gap": eo_gap,
@@ -440,6 +454,8 @@ def main():
             "threshold_pipeline": thr_pipe,
             "threshold_baseline": thr_base,
             "extended_metrics": extended_pipeline,
+            "extended_metrics_thr": extended_pipeline_thr,
+            "server_pool": args.server_pool,
             "eo_surrogate": args.eo_surrogate,
             "universum_mode": args.universum_mode,
             "ema_init": args.ema_init,
