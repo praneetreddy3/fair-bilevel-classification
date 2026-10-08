@@ -205,10 +205,10 @@ def pick_threshold(theta, X, A, Y):
     return best_t
 
 
-def extended_metrics(theta, X, A, Y):
+def extended_metrics(theta, X, A, Y, threshold=0.0):
     logits = xa(X, A) @ theta
     probs = sigmoid(logits)
-    pred = (logits > 0).astype(np.float64)
+    pred = (logits > threshold).astype(np.float64)
     out = {
         "PR_AUC": float(average_precision_score(Y, probs)),
         "ROC_AUC": float(roc_auc_score(Y, probs)),
@@ -343,6 +343,7 @@ def evaluate(theta, data, tune):
         "val_accuracy": val_acc, "val_EO_gap": val_eo,
         "accuracy": acc, "F1_score": f1, "EO_gap": eo, "TPR_group0": tpr0, "TPR_group1": tpr1,
         "threshold": thr, "extended_metrics": extended_metrics(theta, Xt, At, Yt),
+        "extended_metrics_thr": extended_metrics(theta, Xt, At, Yt, threshold=thr),
     }
 
 
@@ -364,7 +365,12 @@ def select(rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", choices=list(DATASET_CFG) + ["all"], default="all")
+    ap.add_argument("--seeds", type=int, default=5, help="seeds 1..N (5 = original run)")
     args = ap.parse_args()
+    global SEEDS, OUT_DIR
+    if args.seeds != 5:   # 10-seed rerun goes to its own folder; the original 5-seed results stay as they are
+        SEEDS = list(range(1, args.seeds + 1))
+        OUT_DIR = os.path.join(PROJECT_ROOT, "outputs", f"fl_baselines_{args.seeds}seeds")
     os.makedirs(OUT_DIR, exist_ok=True)
     datasets = list(DATASET_CFG) if args.data == "all" else [args.data]
 
@@ -393,14 +399,14 @@ def main():
             out["methods"][method] = {"grid": rows, "selected_config": chosen["config"]}
         with open(os.path.join(OUT_DIR, f"{ds}.json"), "w") as f:
             json.dump(out, f, indent=2)
-        print(f"[{ds}] done in {time.time() - t0:.1f}s -> outputs/fl_baselines/{ds}.json")
+        print(f"[{ds}] done in {time.time() - t0:.1f}s -> {os.path.relpath(OUT_DIR, PROJECT_ROOT)}/{ds}.json")
     print_summary(datasets)
 
 
 def summarize_runs(runs):
     vals = list(runs.values())
     def ms(key, ext=False):
-        xs = [v["extended_metrics"][key] if ext else v[key] for v in vals]
+        xs = [v.get("extended_metrics_thr", v["extended_metrics"])[key] if ext else v[key] for v in vals]
         return float(np.mean(xs)), float(np.std(xs))
     return {"acc": ms("accuracy"), "f1": ms("F1_score"), "eo": ms("EO_gap"),
             "dp": ms("DP_gap", True), "eod": ms("EOD_gap", True),
@@ -408,10 +414,12 @@ def summarize_runs(runs):
 
 
 def ours_runs(ds):
-    """Our method's reported runs (outputs/draft_results_<ds>_final_seed<k>.json), same seeds."""
+    """Our method's runs, same seeds: the original reported runs (_final_) for the 5-seed table, the
+    corrected, validation-selected configuration (see scripts/final3_tables.py) for the 10-seed table."""
     runs = {}
+    tag = "final" if len(SEEDS) == 5 else ("final2univ" if ds in ("credit", "adult") else "final2")
     for seed in SEEDS:
-        p = os.path.join(PROJECT_ROOT, "outputs", f"draft_results_{ds}_final_seed{seed}.json")
+        p = os.path.join(PROJECT_ROOT, "outputs", f"draft_results_{ds}_{tag}_seed{seed}.json")
         if os.path.isfile(p):
             with open(p) as fh:
                 runs[seed] = json.load(fh)["pipeline"]
