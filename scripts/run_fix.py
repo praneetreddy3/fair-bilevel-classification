@@ -12,6 +12,7 @@ really within epsilon_EO (or J = 20 steps).
   python scripts/run_fix.py --stage 3 --jobs 4   # sign-corrected feature step (--hg_sign correct), rho grid + control
   python scripts/run_fix.py --stage 5 --variant AB --jobs 4   # a fix variant chosen with scripts/diag_fix.py
   python scripts/run_fix.py --stage 6 --jobs 4   # final: selected configs + controls + Universum toggle, seeds 1-10
+  python scripts/run_fix.py --stage 7 --jobs 4   # controls for the validation-selected Universum setting + non-IID check, 10 seeds
   python scripts/run_fix.py --stage 1 --dry_run  # print commands only
 
 Runs whose result file exists are skipped. Settings other than the ones named are the reported ones
@@ -61,8 +62,26 @@ FINAL2 = {  # stage 6: configurations selected on validation in stage 5 (see out
 }
 
 
+# Universum setting chosen on validation (max val accuracy s.t. val EO <= 0.1) between the
+# stage-6 runs with Universum as before ("final2") and toggled ("final2univ"): Off for all three.
+UNIV_TOGGLED = {"credit": True, "adult": True, "law": False, "compas": False}
+
+
 def jobs_for(stage, variant="AB"):
     jobs = []
+    if stage == 7:   # rho=0 controls for the validation-selected Universum setting; non-IID check, 10 seeds
+        for ds, (v, rho) in FINAL2.items():
+            vf, cfg = VARIANT_FLAGS[v], CFG[ds]
+            if UNIV_TOGGLED[ds]:
+                cfg = [a for a in cfg if a != "--no_universum"] if "--no_universum" in cfg else cfg + ["--no_universum"]
+            for s in range(1, 11):
+                base = ["--seed", str(s), *COMMON, *vf, "--epsilon_EO", "0.02", "--data", ds, *cfg]
+                if UNIV_TOGGLED[ds]:
+                    jobs.append((f"draft_results_{ds}_final2univctl_seed{s}.json", base + ["--rho", "0.0", "--fairness_off"]))
+                jobs.append((f"draft_results_{ds}_final3noniid_seed{s}.json",
+                             base + ["--rho", rho, "--partition", "dirichlet", "--dirichlet_alpha", "0.5",
+                                     "--dp_variant", "post_server", "--dp_sigma", "1.0", "--report_client_eo", "true"]))
+        return jobs
     if stage == 6:   # final runs: selected config + its rho=0 control, seeds 1-10; Universum toggled, seeds 1-10
         for ds, (v, rho) in FINAL2.items():
             vf, cfg = VARIANT_FLAGS[v], CFG[ds]
@@ -140,7 +159,7 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5, 6], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5, 6, 7], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
     ap.add_argument("--variant", default="AB", choices=list(VARIANT_FLAGS), help="stage 5 only")

@@ -153,7 +153,7 @@ def report_privacy_budget(cfg: DPConfig, d: int, num_rounds: int, num_clients: i
         "num_releases": k,
         "epsilon_basic_composition": composed_epsilon_basic(eps1, k),
         "epsilon_advanced_composition": composed_epsilon_advanced(eps1, k, delta_prime=delta),
-        "note": "Analytic Gaussian-mechanism bound (Dwork & Roth), not a tight moments "
-                "accountant; basic composition is a safe upper bound, advanced composition "
-                "is tighter for large num_releases.",
+        "note": "Classical Gaussian-mechanism bound (Dwork & Roth), proven only for epsilon < 1, "
+                "so large values are indicative; basic composition is a safe upper bound "
+                "(advanced composition is uninformative at these epsilon values).",
     }

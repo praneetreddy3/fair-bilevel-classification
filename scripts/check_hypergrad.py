@@ -87,7 +87,10 @@ def main():
         num, ana = np.array(num), np.array(ana)
         slope = float(num @ ana / (ana @ ana + 1e-30))
         corr = float(np.corrcoef(num, ana)[0, 1])
-        print(f"hg_weighted={weighted!s:<5}  slope(numeric/code)={slope:+.3f}  corr={corr:+.3f}")
+        corrected = -ana  # dPhi/dx according to the code after the sign correction
+        rel = float(np.linalg.norm(num - corrected) / (np.linalg.norm(num) + 1e-30))
+        print(f"hg_weighted={weighted!s:<5}  slope(numeric/code)={slope:+.3f}  corr={corr:+.3f}  "
+              f"relative error after sign fix={rel:.2f}")
     print("\nslope ~ -1: code's grad_X = -dPhi/dx, so the original step (x -= eta*grad_X) climbs Phi.")
     print("slope ~ +1: original step descends Phi.  |corr| near 1 = the hypergradient is otherwise right.")
 
