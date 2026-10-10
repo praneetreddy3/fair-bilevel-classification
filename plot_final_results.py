@@ -9,6 +9,7 @@ Reads outputs/draft_results_{dataset}_final_seed{1..5}.json for each dataset in 
 
 Run from project root: python plot_final_results.py            (original results, *_final_*)
                         python plot_final_results.py final2     (corrected method, *_final2_*, 10 seeds)
+                        python plot_final_results.py final3     (validation-selected configuration, 10 seeds)
 Writes: outputs/<tag>_pareto.png, outputs/<tag>_bars.png
 """
 import os
@@ -29,8 +30,16 @@ COLORS = {"credit": "#2a9d8f", "adult": "#e76f51", "law": "#264653", "compas": "
 DISPLAY = {"credit": "Credit", "adult": "Adult", "law": "Law", "compas": "COMPAS"}
 
 
+def _file_tag(ds):
+    # "final3" = the validation-selected configuration (Universum off for Credit/Adult, see
+    # scripts/final3_tables.py); any other tag is used as the file tag directly.
+    if TAG == "final3":
+        return "final2univ" if ds in ("credit", "adult") else "final2"
+    return TAG
+
+
 def load_dataset(ds):
-    files = sorted(glob.glob(os.path.join(OUT, f"draft_results_{ds}_{TAG}_seed*.json")))
+    files = sorted(glob.glob(os.path.join(OUT, f"draft_results_{ds}_{_file_tag(ds)}_seed*.json")))
     runs = []
     for f in files:
         try:
