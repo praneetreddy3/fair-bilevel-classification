@@ -243,7 +243,12 @@ def client_round_al(
         Lout_val.backward(retain_graph=True)
         v = theta_star.grad.clone()
         theta_star.grad = None
-        g_val.backward(retain_graph=True)
+        if g_val.requires_grad:
+            g_val.backward(retain_graph=True)
+        else:
+            # g_EO is a constant 0 when a group has no positive examples (possible for a skewed
+            # non-IID client); it then contributes no gradient.
+            theta_star.grad = torch.zeros_like(theta_star)
         if diag is not None:
             diag.append({"j": j, "g": g_val.item(), "gl": v.norm().item(),
                          "gg": theta_star.grad.norm().item(), "lam": float(lam)})
