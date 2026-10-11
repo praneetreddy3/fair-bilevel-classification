@@ -22,6 +22,9 @@ EO, DemP, EOD at that threshold), and the same selection rule over their rho_o g
 Needs PyTorch and the FairSynData/ folder.
   python scripts/wu_baseline.py --data law --jobs 4
   python scripts/wu_baseline.py --jobs 4                    # all four datasets
+  python scripts/wu_baseline.py --data adult --float64 --jobs 4                 # double precision
+  python scripts/wu_baseline.py --data adult --float64 --adult_log1p --jobs 4   # + their Adult prep
+  (option runs are saved to separate files, e.g. outputs/wu_baseline/adult_f64.json)
 Writes outputs/wu_baseline/<ds>.json and outputs/wu_baseline/summary.md
 """
 import argparse
@@ -49,7 +52,7 @@ def _setup_paths():
 
 def run_one(args):
     """One (dataset, seed, rho_o): Wu et al. stage 1 on every client, then the server fit."""
-    ds, seed, rho = args
+    ds, seed, rho, opts = args
     _setup_paths()
     import torch
     import fl_baselines as fb
@@ -60,8 +63,22 @@ def run_one(args):
     import mycodes.myInit as myInit
 
     torch.set_num_threads(1)
+    # Numerical options (do not change the algorithm): double precision, and the log1p transform of
+    # Adult's heavy-tailed capital-gain / capital-loss columns that the FairSynData Adult setup uses
+    # (reference_setup/rawdata/_prep_adult_credit.py).
+    dt = torch.float64 if opts.get("float64") else torch.float32
+    if opts.get("float64"):
+        torch.set_default_dtype(torch.float64)
     cfg = fb.DATASET_CFG[ds]
-    data = fb.prepare_splits(fb.load_dataset(ds, cfg["sensitive"]), seed, cfg["add_intercept"])
+    raw = fb.load_dataset(ds, cfg["sensitive"])
+    if ds == "adult" and opts.get("adult_log1p"):
+        (Xtr, Atr, Ytr), (Xte, Ate, Yte) = raw
+        Xtr, Xte = Xtr.astype(np.float64).copy(), Xte.astype(np.float64).copy()
+        # columns 3, 4 = capital-gain, capital-loss (numeric columns keep their order before the dummies)
+        assert Xtr[:, 3].max() == 99999, "unexpected Adult column order"
+        Xtr[:, 3:5], Xte[:, 3:5] = np.log1p(Xtr[:, 3:5]), np.log1p(Xte[:, 3:5])
+        raw = ((Xtr, Atr, Ytr), (Xte, Ate, Yte))
+    data = fb.prepare_splits(raw, seed, cfg["add_intercept"])
 
     def params():
         a = AlgorithmParams()
@@ -77,9 +94,9 @@ def run_one(args):
         # their set_seed(42) is called before each client's training
         torch.manual_seed(42); np.random.seed(42)
         alg = params()
-        x = torch.tensor(X, dtype=torch.float32)
-        s = torch.tensor(A, dtype=torch.float32)
-        y = torch.tensor(np.where(Y == 1, 1.0, -1.0), dtype=torch.float32)
+        x = torch.tensor(X, dtype=dt)
+        s = torch.tensor(A, dtype=dt)
+        y = torch.tensor(np.where(Y == 1, 1.0, -1.0), dtype=dt)
         alg.set_params(N_s=x.shape[0])
         xhat, shat, yhat = x.clone().detach(), s.clone().detach(), y.clone().detach()
         theta = myInit.initialize_theta(xhat.shape[1] + 1, method=alg.init_theta)
@@ -115,24 +132,25 @@ def run_one(args):
     # server: one logistic fit on the union of the synthetic data (single communication round)
     torch.manual_seed(42)
     alg = params()
-    Xs = torch.tensor(np.vstack(syn_X), dtype=torch.float32)
-    Ss = torch.tensor(np.concatenate(syn_S), dtype=torch.float32)
-    Ys = torch.tensor(np.concatenate(syn_Y), dtype=torch.float32)
+    Xs = torch.tensor(np.vstack(syn_X), dtype=dt)
+    Ss = torch.tensor(np.concatenate(syn_S), dtype=dt)
+    Ys = torch.tensor(np.concatenate(syn_Y), dtype=dt)
     theta0 = myInit.initialize_theta(Xs.shape[1] + 1, method="all_0")
     theta, _ = solve_inner_problem(1, 0, 0, 0, Xs, Ss, Ys, alg, tp, theta0)
     res = fb.evaluate(theta.numpy().astype(np.float64), data, cfg["tune_threshold"])
     return ds, seed, rho, res, status
 
 
-def summarize(ds):
-    with open(os.path.join(OUT_DIR, f"{ds}.json")) as fh:
+def summarize(ds, tag=""):
+    with open(os.path.join(OUT_DIR, f"{ds}{tag}.json")) as fh:
         out = json.load(fh)
     rows = []
     for rho, runs in out["grid"].items():
         ok = [r for r in runs.values() if r is not None]
         if len(ok) != len(SEEDS):
             continue
-        rows.append({"rho": float(rho), "runs": ok,
+        nan = sum(st.count("nan") for st in out["status"].get(rho, {}).values())
+        rows.append({"rho": float(rho), "runs": ok, "nan_clients": nan,
                      "val_acc": float(np.mean([r["val_accuracy"] for r in ok])),
                      "val_eo": float(np.mean([r["val_EO_gap"] for r in ok]))})
     feas = [r for r in rows if r["val_eo"] <= 0.1]
@@ -140,22 +158,28 @@ def summarize(ds):
     m = lambda k, ext=False: (float(np.mean([(r.get("extended_metrics_thr", r["extended_metrics"])[k] if ext else r[k]) for r in sel["runs"]])),
                               float(np.std([(r.get("extended_metrics_thr", r["extended_metrics"])[k] if ext else r[k]) for r in sel["runs"]])))
     return sel["rho"], {"acc": m("accuracy"), "f1": m("F1_score"), "eo": m("EO_gap"),
-                        "dp": m("DP_gap", True), "eod": m("EOD_gap", True)}, rows
+                        "dp": m("DP_gap", True), "eod": m("EOD_gap", True),
+                        "nan_clients": sel["nan_clients"]}, rows
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", choices=["credit", "adult", "law", "compas", "all"], default="all")
     ap.add_argument("--jobs", type=int, default=4)
+    ap.add_argument("--float64", action="store_true", help="run their solver in double precision")
+    ap.add_argument("--adult_log1p", action="store_true",
+                    help="log1p of Adult capital-gain/loss, as in the FairSynData Adult setup")
     a = ap.parse_args()
+    opts = {"float64": a.float64, "adult_log1p": a.adult_log1p}
+    tag = ("_f64" if a.float64 else "") + ("_log1p" if a.adult_log1p else "")   # separate result files
     if not os.path.isdir(os.path.join(FAIRSYN, "mycodes")):
         sys.exit(f"FairSynData/ not found at {FAIRSYN}")
     os.makedirs(OUT_DIR, exist_ok=True)
     datasets = ["credit", "adult", "law", "compas"] if a.data == "all" else [a.data]
     for ds in datasets:
-        path = os.path.join(OUT_DIR, f"{ds}.json")
-        out = json.load(open(path)) if os.path.isfile(path) else {"dataset": ds, "grid": {}, "status": {}}
-        todo = [(ds, s, r) for r in RHO_GRID for s in SEEDS
+        path = os.path.join(OUT_DIR, f"{ds}{tag}.json")
+        out = json.load(open(path)) if os.path.isfile(path) else {"dataset": ds, "options": opts, "grid": {}, "status": {}}
+        todo = [(ds, s, r, opts) for r in RHO_GRID for s in SEEDS
                 if str(s) not in out["grid"].get(str(r), {})]
         print(f"[{ds}] {len(todo)} runs to do", flush=True)
         with ProcessPoolExecutor(max_workers=a.jobs) as ex:
@@ -165,23 +189,25 @@ def main():
                 with open(path, "w") as fh:          # save after every run (safe to stop and resume)
                     json.dump(out, fh, indent=1)
                 print(f"  done {d} seed {s} rho_o {r:g}  clients: {st}", flush=True)
-    lines = ["| Dataset | selected rho_o | Acc | F1 | EO gap | DemP gap | EOD gap |", "|---|---|---|---|---|---|---|"]
+    lines = [f"Options: {opts}",
+             "| Dataset | selected rho_o | Acc | F1 | EO gap | DemP gap | EOD gap | diverged clients (of 50) |",
+             "|---|---|---|---|---|---|---|---|"]
     tex = []
     for ds in ["credit", "adult", "law", "compas"]:
-        if not os.path.isfile(os.path.join(OUT_DIR, f"{ds}.json")):
+        if not os.path.isfile(os.path.join(OUT_DIR, f"{ds}{tag}.json")):
             continue
-        rho, s, rows = summarize(ds)
+        rho, s, rows = summarize(ds, tag)
         f = lambda p: f"{p[0]:.3f}±{p[1]:.3f}"
-        lines.append(f"| {ds} | {rho:g} | {f(s['acc'])} | {f(s['f1'])} | {f(s['eo'])} | {f(s['dp'])} | {f(s['eod'])} |")
+        lines.append(f"| {ds} | {rho:g} | {f(s['acc'])} | {f(s['f1'])} | {f(s['eo'])} | {f(s['dp'])} | {f(s['eod'])} | {s['nan_clients']} |")
         name = "COMPAS" if ds == "compas" else ds.capitalize()
         t = lambda p: f"\\({p[0]:.3f}\\pm{p[1]:.3f}\\)"
         tex.append(f"{name} & Wu et al. & {t(s['acc'])} & {t(s['f1'])} & {t(s['eo'])} & {t(s['dp'])} & {t(s['eod'])} \\\\")
         for r in rows:
-            lines.append(f"|   {ds} grid | rho_o={r['rho']:g} | val acc {r['val_acc']:.3f} | val EO {r['val_eo']:.3f} | | | |")
+            lines.append(f"|   {ds} grid | rho_o={r['rho']:g} | val acc {r['val_acc']:.3f} | val EO {r['val_eo']:.3f} | | | | {r['nan_clients']} |")
     text = "\n".join(lines)
-    open(os.path.join(OUT_DIR, "summary.md"), "w", encoding="utf-8").write(text + "\n")
-    open(os.path.join(OUT_DIR, "table_rows.tex"), "w", encoding="utf-8").write("\n".join(tex) + "\n")
-    print("\n" + text + "\n\nLaTeX rows (one per dataset) in outputs/wu_baseline/table_rows.tex")
+    open(os.path.join(OUT_DIR, f"summary{tag}.md"), "w", encoding="utf-8").write(text + "\n")
+    open(os.path.join(OUT_DIR, f"table_rows{tag}.tex"), "w", encoding="utf-8").write("\n".join(tex) + "\n")
+    print("\n" + text + f"\n\nLaTeX rows (one per dataset) in outputs/wu_baseline/table_rows{tag}.tex")
 
 
 if __name__ == "__main__":
