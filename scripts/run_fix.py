@@ -13,6 +13,8 @@ really within epsilon_EO (or J = 20 steps).
   python scripts/run_fix.py --stage 5 --variant AB --jobs 4   # a fix variant chosen with scripts/diag_fix.py
   python scripts/run_fix.py --stage 6 --jobs 4   # final: selected configs + controls + Universum toggle, seeds 1-10
   python scripts/run_fix.py --stage 7 --jobs 4   # controls for the validation-selected Universum setting + non-IID check, 10 seeds
+  python scripts/run_fix.py --stage 8 --jobs 8   # replication: rerun the reported configs + controls, seeds 1-10,
+                                                 # on another machine, into outputs/replication/ (see scripts/replication_summary.py)
   python scripts/run_fix.py --stage 1 --dry_run  # print commands only
 
 Runs whose result file exists are skipped. Settings other than the ones named are the reported ones
@@ -30,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "outputs")
+REP = os.path.join(OUT, "replication")   # stage 8 results (independent rerun on different hardware)
 SEEDS = [1, 2, 3, 4, 5]
 COMMON = ["--num_clients", "5", "--rounds", "8", "--K_inner", "100", "--deterministic", "true",
           "--dp_variant", "none", "--ema_init", "first"]
@@ -69,6 +72,19 @@ UNIV_TOGGLED = {"credit": True, "adult": True, "law": False, "compas": False}
 
 def jobs_for(stage, variant="AB"):
     jobs = []
+    if stage == 8:   # replication of the reported results (Table "penalty off vs on"): same flags as the
+        # files used by scripts/final3_tables.py, written to outputs/replication/ under the same names
+        for ds, (v, rho) in FINAL2.items():
+            vf, cfg = VARIANT_FLAGS[v], CFG[ds]
+            tag = "final2"
+            if UNIV_TOGGLED[ds]:
+                cfg = [a for a in cfg if a != "--no_universum"] if "--no_universum" in cfg else cfg + ["--no_universum"]
+                tag = "final2univ"
+            for s in range(1, 11):
+                base = ["--seed", str(s), *COMMON, *vf, "--epsilon_EO", "0.02", "--data", ds, *cfg]
+                jobs.append((f"draft_results_{ds}_{tag}_seed{s}.json", base + ["--rho", rho]))
+                jobs.append((f"draft_results_{ds}_{tag}ctl_seed{s}.json", base + ["--rho", "0.0", "--fairness_off"]))
+        return jobs
     if stage == 7:   # rho=0 controls for the validation-selected Universum setting; non-IID check, 10 seeds
         for ds, (v, rho) in FINAL2.items():
             vf, cfg = VARIANT_FLAGS[v], CFG[ds]
@@ -144,10 +160,12 @@ def jobs_for(stage, variant="AB"):
     return jobs
 
 
-def run_one(job, dry):
+def run_one(job, dry, out=OUT):
     fname, args = job
     cmd = [sys.executable, "-W", "ignore", "-m", "draft_model.run_draft", *args, "--results_file", fname]
-    if os.path.isfile(os.path.join(OUT, fname)):
+    if out != OUT:
+        cmd += ["--out_dir", out]
+    if os.path.isfile(os.path.join(out, fname)):
         return f"skip  {fname}"
     if dry:
         return "DRY   " + " ".join(cmd)
@@ -159,15 +177,16 @@ def run_one(job, dry):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5, 6, 7], default=1)
+    ap.add_argument("--stage", type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8], default=1)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--dry_run", action="store_true")
     ap.add_argument("--variant", default="AB", choices=list(VARIANT_FLAGS), help="stage 5 only")
     a = ap.parse_args()
     jobs = jobs_for(a.stage, a.variant)
+    out = REP if a.stage == 8 else OUT
     print(f"{len(jobs)} runs ({a.jobs} in parallel)")
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-        for msg in ex.map(lambda j: run_one(j, a.dry_run), jobs):
+        for msg in ex.map(lambda j: run_one(j, a.dry_run, out), jobs):
             print(msg, flush=True)
 
 
