@@ -78,7 +78,9 @@ def metrics_pair(theta, X, A, Y, t0, t1):
     bal = 0.5 * (float(np.mean(pred[pos])) + float(np.mean(1 - pred[~pos])))
     dp = abs(float(np.mean(pred[A == 1])) - float(np.mean(pred[A == 0])))
     eod = max(abs(tpr1 - tpr0), abs(tnr[1] - tnr[0]))
-    return {"accuracy": acc, "EO_gap": abs(tpr1 - tpr0), "TPR_group0": tpr0, "TPR_group1": tpr1,
+    tp = float(np.sum((pred == 1) & pos)); fp = float(np.sum((pred == 1) & ~pos)); fn = float(np.sum((pred == 0) & pos))
+    f1 = 2 * tp / (2 * tp + fp + fn) if tp > 0 else 0.0
+    return {"accuracy": acc, "F1_score": f1, "EO_gap": abs(tpr1 - tpr0), "TPR_group0": tpr0, "TPR_group1": tpr1,
             "balanced_accuracy": bal, "DP_gap": dp, "EOD_gap": eod, "t0": t0, "t1": t1}
 
 
@@ -107,8 +109,13 @@ def ms(v):
     return f"{np.mean(v):.3f}±{np.std(v):.3f}"
 
 
+def tex(v):
+    return f"\\({np.mean(v):.3f}\\pm{np.std(v):.3f}\\)"
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+    tex_rows = []
     md = ["| Dataset | Method | Acc | EO gap | Bal. acc | DemP gap | EOD gap | val EO |",
           "|---|---|---|---|---|---|---|---|"]
     for ds in ("credit", "adult", "law", "compas"):
@@ -120,6 +127,10 @@ def main():
             md.append(f"| {ds} | {name} | {ms([r['accuracy'] for r in rs])} | {ms([r['EO_gap'] for r in rs])} | "
                       f"{ms([r['balanced_accuracy'] for r in rs])} | {ms([r['DP_gap'] for r in rs])} | "
                       f"{ms([r['EOD_gap'] for r in rs])} | {ms([r['val']['EO_gap'] for r in rs])} |")
+            name_tex = {"credit": "Credit", "adult": "Adult", "law": "Law", "compas": "COMPAS"}[ds]
+            tex_rows.append(f"{name_tex} & {name.replace('+PP', ' + post-proc.')} & {tex([r['accuracy'] for r in rs])} & "
+                            f"{tex([r['F1_score'] for r in rs])} & {tex([r['EO_gap'] for r in rs])} & "
+                            f"{tex([r['DP_gap'] for r in rs])} & {tex([r['EOD_gap'] for r in rs])} \\\\")
         fa = list(out["FedAvg_plain"].values())
         md.append(f"| {ds} | FedAvg (no PP, check) | {ms([r['accuracy'] for r in fa])} | "
                   f"{ms([r['EO_gap'] for r in fa])} | | | | |")
@@ -128,6 +139,8 @@ def main():
         f.write("Group-threshold post-processing, 10 seeds, thresholds chosen on validation "
                 f"(val EO <= {EPS_EO}, max balanced acc / acc). See scripts/postproc_baseline.py.\n\n")
         f.write("\n".join(md) + "\n")
+    with open(os.path.join(OUT_DIR, "table_rows.tex"), "w", encoding="utf-8") as f:
+        f.write("\n".join(tex_rows) + "\n")
 
 
 if __name__ == "__main__":
